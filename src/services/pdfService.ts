@@ -10,10 +10,11 @@ import {
   VehicleStatus,
   ParsingDiagnostics,
   DiscardedRecordDetail,
+  DiscardedSummary,
   SafetyValidation
 } from '../types/stock';
 import { autonetService } from './autonetService';
-import { normalizeMileage } from '../utils/formatters';
+import { normalizeMileage, parseArgentineInteger, parseMileage, parsePrice } from '../utils/formatters';
 import { getSituacionOperativaInfo } from '../utils/autonetHelpers';
 
 // Configure pdfjs worker if in browser
@@ -25,7 +26,7 @@ if (typeof window !== 'undefined') {
   }
 }
 
-export { normalizeMileage };
+export { normalizeMileage, parseArgentineInteger, parseMileage, parsePrice };
 
 export interface ExtractedVehicleDraft {
   patente?: string;
@@ -419,6 +420,7 @@ export interface ParsedVehicleDescription {
   modelo: string;
   version: string;
   rawDescription?: string;
+  requiereRevisionModelo?: boolean;
 }
 
 /**
@@ -537,11 +539,13 @@ export function parseVehicleDescription(rawDescription: string): ParsedVehicleDe
     }
   }
 
-  // Si aún no hay modelo, tomar el primer token de afterBrand
+  let requiereRevisionModelo = false;
+  // Si aún no hay modelo, tomar el primer token de afterBrand (modelo no catalogado pero válido)
   if (!modelo) {
     const parts = afterBrand.split(/\s+/);
     modelo = (parts[0] || 'UNIDAD').toUpperCase();
     restAfterModel = parts.slice(1).join(' ').trim();
+    requiereRevisionModelo = true;
   }
 
   // Normalizar variaciones de modelo compuesto
@@ -562,6 +566,7 @@ export function parseVehicleDescription(rawDescription: string): ParsedVehicleDe
     modelo,
     version,
     rawDescription,
+    requiereRevisionModelo,
   };
 }
 
@@ -685,6 +690,43 @@ export class PdfService {
   }
 
   /**
+   * Genera un detalle completo de diagnóstico para una fila descartada.
+   */
+  private createDiscardedRecord(params: {
+    page?: number;
+    rowNumber?: number;
+    raw: string;
+    tokens?: PdfToken[];
+    cols?: Record<TableColumnKey, string>;
+    plate?: string;
+    reason: string;
+    category: DiscardedRecordDetail['category'];
+  }): DiscardedRecordDetail {
+    const tokensWithX = params.tokens && params.tokens.length > 0
+      ? params.tokens.map((t) => `${t.text} (x:${Math.round(t.x)})`).join(' | ')
+      : undefined;
+
+    return {
+      page: params.page,
+      rowNumber: params.rowNumber,
+      raw: params.raw,
+      tokensWithX,
+      descripcionDetectada: params.cols?.vehiculo,
+      ubDetectado: params.cols?.ub,
+      tipoDetectado: params.cols?.tipo,
+      patenteDetectada: params.plate || params.cols?.patente,
+      anioDetectado: params.cols?.anio,
+      colorDetectado: params.cols?.color,
+      kmDetectado: params.cols?.km,
+      empresaDetectada: params.cols?.empresa,
+      precioDetectado: params.cols?.precio,
+      fechaDetectada: params.cols?.fechaToma,
+      reason: params.reason,
+      category: params.category,
+    };
+  }
+
+  /**
    * Detecta si una fila visual corresponde a los encabezados de la tabla de stock
    * y calcula los rangos de coordenadas X de cada columna.
    */
@@ -696,17 +738,17 @@ export class PdfService {
     const scale = pageWidth > 0 ? pageWidth / 842 : 1;
     const defaultBounds: Record<TableColumnKey, ColumnRange> = {
       orden: { min: 0 * scale, max: 40 * scale },
-      prefijo: { min: 40 * scale, max: 95 * scale },
-      vehiculo: { min: 95 * scale, max: 355 * scale },
-      ub: { min: 355 * scale, max: 395 * scale },
-      tipo: { min: 395 * scale, max: 430 * scale },
-      patente: { min: 430 * scale, max: 495 * scale },
-      anio: { min: 495 * scale, max: 540 * scale },
-      color: { min: 540 * scale, max: 600 * scale },
-      km: { min: 600 * scale, max: 665 * scale },
-      empresa: { min: 665 * scale, max: 735 * scale },
-      precio: { min: 735 * scale, max: 805 * scale },
-      fechaToma: { min: 805 * scale, max: 2000 * scale },
+      prefijo: { min: 40 * scale, max: 72 * scale },
+      vehiculo: { min: 72 * scale, max: 360 * scale },
+      ub: { min: 360 * scale, max: 400 * scale },
+      tipo: { min: 400 * scale, max: 430 * scale },
+      patente: { min: 430 * scale, max: 500 * scale },
+      anio: { min: 500 * scale, max: 545 * scale },
+      color: { min: 545 * scale, max: 605 * scale },
+      km: { min: 605 * scale, max: 675 * scale },
+      empresa: { min: 675 * scale, max: 745 * scale },
+      precio: { min: 745 * scale, max: 815 * scale },
+      fechaToma: { min: 815 * scale, max: 2000 * scale },
     };
 
     // Buscar si alguna fila contiene los encabezados reales
@@ -721,30 +763,30 @@ export class PdfService {
       const headerMatches = [hasPatenteHdr, hasUnidadHdr, hasKmHdr, hasPrecioHdr, hasAnioHdr].filter(Boolean).length;
       if (headerMatches >= 3) {
         // Encontramos la fila de encabezados: medir posiciones reales de tokens clave
-        let vehiculoLeft = 95 * scale;
-        let vehiculoRight = 355 * scale;
-        let ubCenter = 375 * scale;
-        let tipoCenter = 412 * scale;
-        let patenteCenter = 462 * scale;
-        let anioCenter = 517 * scale;
-        let colorCenter = 570 * scale;
-        let kmCenter = 632 * scale;
-        let empresaCenter = 700 * scale;
-        let precioCenter = 770 * scale;
-        let fechaTomaCenter = 830 * scale;
+        let vehiculoLeft = 72 * scale;
+        let vehiculoRight = 360 * scale;
+        let ubCenter = 380 * scale;
+        let tipoCenter = 415 * scale;
+        let patenteCenter = 465 * scale;
+        let anioCenter = 522 * scale;
+        let colorCenter = 575 * scale;
+        let kmCenter = 640 * scale;
+        let empresaCenter = 710 * scale;
+        let precioCenter = 780 * scale;
+        let fechaTomaCenter = 835 * scale;
 
         for (const token of row.tokens) {
           const tText = token.text.toUpperCase();
           const tCenter = token.x + token.width / 2;
 
           if (tText.includes('UNIDAD')) {
-            vehiculoLeft = Math.max(90 * scale, token.x - 2);
+            vehiculoLeft = Math.min(75 * scale, Math.max(65 * scale, token.x - 30));
           }
           if (tText.includes('VERSION') || tText.includes('MODELO')) {
             vehiculoRight = Math.max(vehiculoRight, token.x + token.width);
           }
-          if (tText.includes('UB')) ubCenter = tCenter;
-          if (tText.includes('TIPO')) tipoCenter = tCenter;
+          if (tText === 'UB' || tText.includes('UB')) ubCenter = tCenter;
+          if (tText === 'TIPO' || tText.includes('TIPO')) tipoCenter = tCenter;
           if (tText.includes('PATENTE') || tText.includes('DOMINIO')) patenteCenter = tCenter;
           if (tText.includes('AÑO') || tText.includes('ANO')) anioCenter = tCenter;
           if (tText.includes('COLOR')) colorCenter = tCenter;
@@ -754,7 +796,7 @@ export class PdfService {
           if (tText.includes('TOMA') || tText.includes('FECHA')) fechaTomaCenter = tCenter;
         }
 
-        const ordenMax = Math.min(42 * scale, vehiculoLeft * 0.42);
+        const ordenMax = Math.min(40 * scale, vehiculoLeft * 0.55);
         return {
           orden: { min: 0, max: ordenMax },
           prefijo: { min: ordenMax, max: vehiculoLeft },
@@ -781,7 +823,10 @@ export class PdfService {
   private assignRowTokensToColumns(
     row: VisualRow,
     bounds: Record<TableColumnKey, ColumnRange>
-  ): Record<TableColumnKey, string> {
+  ): {
+    strings: Record<TableColumnKey, string>;
+    tokens: Record<TableColumnKey, PdfToken[]>;
+  } {
     const colTokens: Record<TableColumnKey, PdfToken[]> = {
       orden: [],
       prefijo: [],
@@ -802,9 +847,9 @@ export class PdfService {
       let assigned = false;
       for (const [colKey, range] of Object.entries(bounds) as [TableColumnKey, ColumnRange][]) {
         if (tokenCenter >= range.min && tokenCenter < range.max) {
-          // Protección: si cae en columna 'vehiculo' pero es un prefijo interno en x < 120 pt,
+          // Protección: si cae en columna 'vehiculo' pero es un prefijo interno en x < 75 pt,
           // pertenece a la primera columna ('prefijo').
-          if (colKey === 'vehiculo' && token.x < 120 && BANNED_VERSION_PREFIX_REGEX.test(token.text.trim())) {
+          if (colKey === 'vehiculo' && token.x < 75 && BANNED_VERSION_PREFIX_REGEX.test(token.text.trim())) {
             colTokens.prefijo.push(token);
             assigned = true;
             break;
@@ -823,7 +868,7 @@ export class PdfService {
       }
     }
 
-    return {
+    const strings: Record<TableColumnKey, string> = {
       orden: colTokens.orden.map((t) => t.text).join(' ').trim(),
       prefijo: colTokens.prefijo.map((t) => t.text).join(' ').trim(),
       vehiculo: colTokens.vehiculo.map((t) => t.text).join(' ').trim(),
@@ -837,6 +882,8 @@ export class PdfService {
       precio: colTokens.precio.map((t) => t.text).join(' ').trim(),
       fechaToma: colTokens.fechaToma.map((t) => t.text).join(' ').trim(),
     };
+
+    return { strings, tokens: colTokens };
   }
 
   /**
@@ -913,24 +960,38 @@ export class PdfService {
 
         const cols = this.assignRowTokensToColumns(row, columnBounds);
 
-        // A) Búsqueda ESTRICTA de la patente en la columna Patente (o en tokens adyacentes si hay ligero corrimiento)
+        // A) Búsqueda de la patente como ANCLA DE CONTROL (Sección 5)
         let identifiedPlate = '';
-        const rawColPlate = cols.patente;
+        let plateTokenIdx = -1;
 
-        // Probar tokens de la columna Patente
-        const plateTokens = rawColPlate.split(/\s+/).filter(Boolean);
-        for (const token of plateTokens) {
-          if (isValidPlate(token)) {
-            identifiedPlate = normalizePlate(token);
+        // 1. Buscar en tokens individuales de la fila
+        for (let i = 0; i < row.tokens.length; i++) {
+          const t = row.tokens[i];
+          if (isValidPlate(t.text)) {
+            plateTokenIdx = i;
+            identifiedPlate = normalizePlate(t.text);
             break;
           }
         }
 
-        // Si no se encontró en la columna patente, revisar tokens de la fila
+        // 2. Buscar en pares de tokens adyacentes si la patente quedó partida (ej: "AD" y "835UE")
         if (!identifiedPlate) {
-          for (const t of row.tokens) {
-            if (isValidPlate(t.text)) {
-              identifiedPlate = normalizePlate(t.text);
+          for (let i = 0; i < row.tokens.length - 1; i++) {
+            const combined = row.tokens[i].text + row.tokens[i + 1].text;
+            if (isValidPlate(combined)) {
+              plateTokenIdx = i;
+              identifiedPlate = normalizePlate(combined);
+              break;
+            }
+          }
+        }
+
+        // 3. Revisar tokens en la columna patente asignada
+        if (!identifiedPlate && cols.strings.patente) {
+          const plateTokens = cols.strings.patente.split(/\s+/).filter(Boolean);
+          for (const token of plateTokens) {
+            if (isValidPlate(token)) {
+              identifiedPlate = normalizePlate(token);
               break;
             }
           }
@@ -938,12 +999,18 @@ export class PdfService {
 
         // Si la fila no tiene patente válida:
         if (!identifiedPlate) {
-          // Solo descartar si parece una fila con datos (más de 10 caracteres)
-          if (row.rawLine.length > 10) {
-            discardedRecords.push({
-              raw: row.rawLine,
-              reason: 'Registro descartado: no se pudo identificar una patente válida.',
-            });
+          if (row.rawLine.length > 8) {
+            discardedRecords.push(
+              this.createDiscardedRecord({
+                page: row.page,
+                rowNumber: rowIdx + 1,
+                raw: row.rawLine,
+                tokens: row.tokens,
+                cols: cols.strings,
+                reason: 'Registro descartado: no se pudo identificar una patente válida en la fila.',
+                category: 'patente_no_detectada',
+              })
+            );
             console.warn(`[PDF-PARSER] PÁGINA ${row.page} FILA ${rowIdx + 1} DESCARTADA: No hay patente válida -> "${row.rawLine}"`);
           }
           rowIdx++;
@@ -953,16 +1020,17 @@ export class PdfService {
         // B) Si tiene patente válida: ensamblar el registro (con soporte para líneas multilínea envueltas)
         recordsReconstructed++;
 
-        let assembledVehiculo = cols.vehiculo;
-        let assembledUb = cols.ub;
-        let assembledTipo = cols.tipo;
-        let assembledAnio = cols.anio;
-        let assembledColor = cols.color;
-        let assembledKm = cols.km;
-        let assembledEmpresa = cols.empresa;
-        let assembledPrecio = cols.precio;
-        let assembledFechaToma = cols.fechaToma;
+        let assembledVehiculo = cols.strings.vehiculo;
+        let assembledUb = cols.strings.ub;
+        let assembledTipo = cols.strings.tipo;
+        let assembledAnio = cols.strings.anio;
+        let assembledColor = cols.strings.color;
+        let assembledKm = cols.strings.km;
+        let assembledEmpresa = cols.strings.empresa;
+        let assembledPrecio = cols.strings.precio;
+        let assembledFechaToma = cols.strings.fechaToma;
         let combinedRaw = row.rawLine;
+        const combinedTokens = [...row.tokens];
 
         // Revisar si la siguiente fila es una continuación de esta unidad (ej: segunda línea de versión)
         let nextIdx = rowIdx + 1;
@@ -975,17 +1043,18 @@ export class PdfService {
           // Si la siguiente fila contiene su propia patente válida, es OTRA unidad
           const nextHasPlate = nextRow.tokens.some((t) => isValidPlate(t.text));
           // Si la siguiente fila tiene número de orden inicial, es OTRA unidad
-          const nextHasOrderNum = /^\d{1,3}$/.test(nextCols.orden.trim());
+          const nextHasOrderNum = /^\d{1,3}$/.test(nextCols.strings.orden.trim());
           // Distancia vertical pequeña (<= 18 pt)
           const isCloseY = Math.abs(allPageVisualRows[nextIdx - 1].y - nextRow.y) <= 18;
 
-          if (!nextHasPlate && !nextHasOrderNum && isCloseY && nextCols.vehiculo) {
+          if (!nextHasPlate && !nextHasOrderNum && isCloseY && nextCols.strings.vehiculo) {
             // Es una línea secundaria de descripción
-            assembledVehiculo += ' ' + nextCols.vehiculo;
-            if (!assembledColor && nextCols.color) assembledColor = nextCols.color;
-            if (!assembledKm && nextCols.km) assembledKm = nextCols.km;
-            if (!assembledPrecio && nextCols.precio) assembledPrecio = nextCols.precio;
+            assembledVehiculo += ' ' + nextCols.strings.vehiculo;
+            if (!assembledColor && nextCols.strings.color) assembledColor = nextCols.strings.color;
+            if (!assembledKm && nextCols.strings.km) assembledKm = nextCols.strings.km;
+            if (!assembledPrecio && nextCols.strings.precio) assembledPrecio = nextCols.strings.precio;
             combinedRaw += ' ' + nextRow.rawLine;
+            combinedTokens.push(...nextRow.tokens);
             nextIdx++;
           } else {
             break;
@@ -994,17 +1063,53 @@ export class PdfService {
 
         rowIdx = nextIdx; // Avanzar el cursor de filas
 
-        // C) Validar y construir los datos normalizados de la unidad
+        // C) AUTORRECUPERACIÓN Y NORMALIZACIÓN CON EL ANCLA DE PATENTE (Sección 5 y 9)
 
         // 1. MARCA, MODELO y VERSION (exclusivamente de columna UNIDAD - MODELO - VERSION)
-        const cleanDesc = cleanVehicleColumnText(assembledVehiculo);
-        const parsedDesc = parseVehicleDescription(cleanDesc);
+        let cleanDesc = cleanVehicleColumnText(assembledVehiculo);
+        let parsedDesc = parseVehicleDescription(cleanDesc);
+
+        // Si la marca no fue detectada, buscar si quedó un fragmento en el prefijo o antes de UB
+        if (parsedDesc.marca === 'DESCONOCIDA') {
+          if (cols.strings.prefijo) {
+            const tryPrefijo = cleanVehicleColumnText(cols.strings.prefijo + ' ' + assembledVehiculo);
+            const parsedPrefijo = parseVehicleDescription(tryPrefijo);
+            if (parsedPrefijo.marca !== 'DESCONOCIDA') {
+              cleanDesc = tryPrefijo;
+              parsedDesc = parsedPrefijo;
+            }
+          }
+        }
+
+        // Si aún no se detectó marca, buscar marcas controladas en la fila cruda completa
+        if (parsedDesc.marca === 'DESCONOCIDA') {
+          for (const b of CONTROLLED_BRANDS) {
+            const m = combinedRaw.match(b.regex);
+            if (m && m.index !== undefined) {
+              const fromBrand = combinedRaw.slice(m.index);
+              const tryLine = parseVehicleDescription(fromBrand);
+              if (tryLine.marca !== 'DESCONOCIDA') {
+                cleanDesc = fromBrand;
+                parsedDesc = tryLine;
+                break;
+              }
+            }
+          }
+        }
 
         if (parsedDesc.marca === 'DESCONOCIDA' || parsedDesc.marca.toLowerCase() === 'autonet') {
-          discardedRecords.push({
-            raw: combinedRaw,
-            reason: `Registro descartado: marca automotriz no válida o no identificada en '${cleanDesc}'.`,
-          });
+          discardedRecords.push(
+            this.createDiscardedRecord({
+              page: row.page,
+              rowNumber: recordsReconstructed,
+              raw: combinedRaw,
+              tokens: combinedTokens,
+              cols: cols.strings,
+              plate: identifiedPlate,
+              reason: `Registro descartado: marca automotriz no válida o no identificada en '${cleanDesc}'.`,
+              category: 'marca_no_detectada',
+            })
+          );
           console.warn(`[PDF-PARSER] Registro descartado: marca automotriz inválida en "${cleanDesc}"`);
           continue;
         }
@@ -1013,38 +1118,95 @@ export class PdfService {
         const modelo = parsedDesc.modelo;
         const version = parsedDesc.version;
 
-        // 2. AÑO (columna Año)
-        const yearMatch = assembledAnio.match(/\b(199\d|20[0-2]\d|2030)\b/);
+        // 2. AÑO (columna Año con autorrecuperación en tokens adyacentes a la patente)
+        let yearMatch = assembledAnio.match(/\b(199\d|20[0-2]\d|2030)\b/);
         if (!yearMatch) {
-          discardedRecords.push({
-            raw: combinedRaw,
-            reason: `Registro descartado: año no válido o fuera de rango (valor recibido: '${assembledAnio}').`,
-          });
+          const tokensAfterPlate = plateTokenIdx >= 0 ? combinedTokens.slice(plateTokenIdx + 1) : combinedTokens;
+          for (const t of tokensAfterPlate) {
+            const m = t.text.match(/\b(199\d|20[0-2]\d|2030)\b/);
+            if (m) {
+              yearMatch = m;
+              assembledAnio = m[1];
+              break;
+            }
+          }
+          if (!yearMatch) {
+            for (const t of combinedTokens) {
+              const m = t.text.match(/\b(199\d|20[0-2]\d|2030)\b/);
+              if (m) {
+                yearMatch = m;
+                assembledAnio = m[1];
+                break;
+              }
+            }
+          }
+        }
+
+        if (!yearMatch) {
+          discardedRecords.push(
+            this.createDiscardedRecord({
+              page: row.page,
+              rowNumber: recordsReconstructed,
+              raw: combinedRaw,
+              tokens: combinedTokens,
+              cols: cols.strings,
+              plate: identifiedPlate,
+              reason: `Registro descartado: año no válido o fuera de rango (valor recibido: '${assembledAnio}').`,
+              category: 'anio_invalido',
+            })
+          );
           console.warn(`[PDF-PARSER] Registro descartado: año no válido (${assembledAnio}) para patente ${identifiedPlate}`);
           continue;
         }
         const anio = parseInt(yearMatch[1], 10);
 
-        // 3. KILOMETRAJE (columna KM exclusivamente)
-        const kmNum = normalizeMileage(assembledKm);
+        // 3. KILOMETRAJE (columna KM normalizada numéricamente, nunca bloqueante si está ausente/0)
+        let kmNum = parseMileage(assembledKm);
+        if (kmNum === null) {
+          const tokensAfterPlate = plateTokenIdx >= 0 ? combinedTokens.slice(plateTokenIdx + 1) : combinedTokens;
+          for (const t of tokensAfterPlate) {
+            if (t.text.match(/\b\d{1,3}(?:\.\d{3})+\b/) || t.text === '0' || /^\d{1,6}$/.test(t.text)) {
+              const val = parseMileage(t.text);
+              if (val !== null && val < 500000) {
+                kmNum = val;
+                assembledKm = t.text;
+                break;
+              }
+            }
+          }
+        }
         if (kmNum === null || isNaN(kmNum) || kmNum < 0) {
-          discardedRecords.push({
-            raw: combinedRaw,
-            reason: `Registro descartado: kilometraje no numérico en columna KM (valor recibido: '${assembledKm}').`,
-          });
-          console.warn(`[PDF-PARSER] Registro descartado: KM no numérico (${assembledKm}) para patente ${identifiedPlate}`);
-          continue;
+          kmNum = 0; // Default a 0 km para unidades nuevas o sin kilometraje consignado
         }
         const kilometraje = kmNum;
 
-        // 4. PRECIO (columna VR VENTA exclusivamente)
-        const cleanPrice = assembledPrecio.replace(/[^0-9]/g, '');
-        const precioNum = parseInt(cleanPrice, 10);
-        if (isNaN(precioNum) || precioNum <= 0) {
-          discardedRecords.push({
-            raw: combinedRaw,
-            reason: `Registro descartado: precio no numérico o inválido en columna VR VENTA (valor recibido: '${assembledPrecio}').`,
-          });
+        // 4. PRECIO (columna VR VENTA normalizada con parsePrice)
+        let precioNum = parsePrice(assembledPrecio);
+        if (precioNum === null || precioNum <= 100000) {
+          const tokensAfterPlate = plateTokenIdx >= 0 ? combinedTokens.slice(plateTokenIdx + 1) : combinedTokens;
+          for (const t of tokensAfterPlate) {
+            const p = parsePrice(t.text);
+            if (p && p >= 500000) {
+              precioNum = p;
+              assembledPrecio = t.text;
+              break;
+            }
+          }
+        }
+
+        if (precioNum === null || precioNum <= 0) {
+          discardedRecords.push(
+            this.createDiscardedRecord({
+              page: row.page,
+              rowNumber: recordsReconstructed,
+              raw: combinedRaw,
+              tokens: combinedTokens,
+              cols: cols.strings,
+              plate: identifiedPlate,
+              reason: `Registro descartado: precio no numérico o inválido en columna VR VENTA (valor recibido: '${assembledPrecio}').`,
+              category: 'precio_invalido',
+            })
+          );
           console.warn(`[PDF-PARSER] Registro descartado: Precio inválido (${assembledPrecio}) para patente ${identifiedPlate}`);
           continue;
         }
@@ -1062,16 +1224,25 @@ export class PdfService {
 
         // 7. Deduplicación por patente
         if (seenPlates.has(identifiedPlate)) {
-          discardedRecords.push({
-            raw: combinedRaw,
-            reason: `Registro descartado: patente duplicada en el archivo (${identifiedPlate}).`,
-          });
+          discardedRecords.push(
+            this.createDiscardedRecord({
+              page: row.page,
+              rowNumber: recordsReconstructed,
+              raw: combinedRaw,
+              tokens: combinedTokens,
+              cols: cols.strings,
+              plate: identifiedPlate,
+              reason: `Registro descartado: patente duplicada en el archivo (${identifiedPlate}).`,
+              category: 'otros',
+            })
+          );
           continue;
         }
         seenPlates.add(identifiedPlate);
 
         // 8. Crear el objeto Vehicle validado
         const numOrden = validVehicles.length + 1;
+        const observacionesRevision = parsedDesc.requiereRevisionModelo ? ' | Requiere revisión de modelo' : '';
         const vehicle: Partial<Vehicle> = {
           id: `AUT-${String(numOrden).padStart(3, '0')}`,
           numeroOrden: numOrden,
@@ -1088,7 +1259,7 @@ export class PdfService {
           caja: 'Manual',
           traccion: '4x2',
           estado: 'Disponible',
-          observaciones: `Ubicación: ${ubInfo.label} | Empresa: ${empresa} | Toma: ${fechaToma}`,
+          observaciones: `Ubicación: ${ubInfo.label} | Empresa: ${empresa} | Toma: ${fechaToma}${observacionesRevision}`,
           ubicacion: ubCode,
           ubCode,
           ubLabel: ubInfo.shortLabel,
@@ -1104,8 +1275,53 @@ export class PdfService {
         validVehicles.push(vehicle);
 
         console.log(
-          `[PDF-PARSER] VALID VEHICLE #${numOrden}: ${marca} ${modelo} (${anio}) | Patente: ${identifiedPlate} | KM: ${kilometraje} | Precio: $${precio.toLocaleString('es-AR')} | Ub: ${ubCode} | Tipo: ${tipoVehiculo}`
+          `[PDF-PARSER] VALID VEHICLE #${numOrden}: ${marca} ${modelo} (${anio}) | Patente: ${identifiedPlate} | KM: ${kilometraje} | Precio: ${precio.toLocaleString('es-AR')} | Ub: ${ubCode} | Tipo: ${tipoVehiculo}`
         );
+      }
+
+      // 4. Construir resumen de motivos de descarte agrupados (Sección 3 y 4)
+      const discardedSummary: DiscardedSummary = {
+        patenteNoDetectada: 0,
+        patenteInvalida: 0,
+        marcaNoDetectada: 0,
+        modeloNoDetectado: 0,
+        anioInvalido: 0,
+        kmInvalido: 0,
+        precioInvalido: 0,
+        columnasIncompletas: 0,
+        otros: 0,
+      };
+
+      for (const d of discardedRecords) {
+        switch (d.category) {
+          case 'patente_no_detectada':
+            discardedSummary.patenteNoDetectada++;
+            break;
+          case 'patente_invalida':
+            discardedSummary.patenteInvalida++;
+            break;
+          case 'marca_no_detectada':
+            discardedSummary.marcaNoDetectada++;
+            break;
+          case 'modelo_no_detectado':
+            discardedSummary.modeloNoDetectado++;
+            break;
+          case 'anio_invalido':
+            discardedSummary.anioInvalido++;
+            break;
+          case 'km_invalido':
+            discardedSummary.kmInvalido++;
+            break;
+          case 'precio_invalido':
+            discardedSummary.precioInvalido++;
+            break;
+          case 'columnas_incompletas':
+            discardedSummary.columnasIncompletas++;
+            break;
+          default:
+            discardedSummary.otros++;
+            break;
+        }
       }
 
       const diagnostics: ParsingDiagnostics = {
@@ -1115,9 +1331,10 @@ export class PdfService {
         validRecords: validVehicles.length,
         discardedRecords: discardedRecords.length,
         discardedDetails: discardedRecords,
+        discardedSummary,
       };
 
-      console.log(`[PDF-PARSER-RESUMEN] Total páginas: ${pdf.numPages} | Filas visuales: ${allPageVisualRows.length} | Vehículos válidos: ${validVehicles.length} | Descartados: ${discardedRecords.length}`);
+      console.log(`[PDF-PARSER-RESUMEN] Total páginas: ${pdf.numPages} | Filas visuales: ${allPageVisualRows.length} | Filas reconstruidas: ${recordsReconstructed} | Vehículos válidos: ${validVehicles.length} | Descartados: ${discardedRecords.length}`);
 
       return {
         fileName: file.name,

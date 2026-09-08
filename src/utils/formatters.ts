@@ -8,6 +8,52 @@ export function formatCurrency(amount: number, currency: 'ARS' | 'USD' = 'ARS'):
 }
 
 /**
+ * Parsea un número entero en notación argentina donde el punto (.) separa miles.
+ * Ejemplos:
+ * '136.000' -> 136000
+ * '26.200' -> 26200
+ * '3.200' -> 3200
+ * '19.300.000' -> 19300000
+ * '29.000.000' -> 29000000
+ * '$ 19.300.000,00' -> 19300000
+ */
+export function parseArgentineInteger(value: string | number | null | undefined): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'number') {
+    return isNaN(value) || !isFinite(value) ? null : Math.round(value);
+  }
+  const str = String(value).trim();
+  if (!str) return null;
+
+  // Si tiene decimales tras la coma (ej: ",00"), se descartan
+  const beforeComma = str.split(',')[0];
+  // Retirar símbolos de moneda, letras, espacios y puntos separadores de miles
+  const digits = beforeComma.replace(/[^0-9]/g, '');
+  if (!digits) return null;
+
+  const num = parseInt(digits, 10);
+  return isNaN(num) ? null : num;
+}
+
+/**
+ * Parsea kilometraje de vehículos garantizando que nunca se interprete como decimal
+ * y reconociendo unidades como '0 km', '136.000', '-', etc.
+ */
+export function parseMileage(value: string | number | null | undefined): number | null {
+  if (value === null || value === undefined) return null;
+  const str = String(value).trim();
+  if (/^(0|0\s*km|cero|-)$/i.test(str)) return 0;
+  return parseArgentineInteger(value);
+}
+
+/**
+ * Parsea precios de venta de vehículos en pesos argentinos.
+ */
+export function parsePrice(value: string | number | null | undefined): number | null {
+  return parseArgentineInteger(value);
+}
+
+/**
  * Normaliza cualquier valor de kilometraje a número entero o null.
  * Reglas esenciales:
  * - Acepta: number | string | null | undefined

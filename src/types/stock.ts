@@ -68,8 +68,43 @@ export interface VehicleDiffItem {
 }
 
 export interface DiscardedRecordDetail {
+  page?: number;
+  rowNumber?: number;
   raw: string;
+  tokensWithX?: string;
+  descripcionDetectada?: string;
+  ubDetectado?: string;
+  tipoDetectado?: string;
+  patenteDetectada?: string;
+  anioDetectado?: string;
+  colorDetectado?: string;
+  kmDetectado?: string;
+  empresaDetectada?: string;
+  precioDetectado?: string;
+  fechaDetectada?: string;
   reason: string;
+  category?:
+    | 'patente_no_detectada'
+    | 'patente_invalida'
+    | 'marca_no_detectada'
+    | 'modelo_no_detectado'
+    | 'anio_invalido'
+    | 'km_invalido'
+    | 'precio_invalido'
+    | 'columnas_incompletas'
+    | 'otros';
+}
+
+export interface DiscardedSummary {
+  patenteNoDetectada: number;
+  patenteInvalida: number;
+  marcaNoDetectada: number;
+  modeloNoDetectado: number;
+  anioInvalido: number;
+  kmInvalido: number;
+  precioInvalido: number;
+  columnasIncompletas: number;
+  otros: number;
 }
 
 export interface ParsingDiagnostics {
@@ -80,6 +115,7 @@ export interface ParsingDiagnostics {
   discardedRecords: number;
   corregidosCount?: number;
   discardedDetails: DiscardedRecordDetail[];
+  discardedSummary?: DiscardedSummary;
 }
 
 export interface SafetyValidation {

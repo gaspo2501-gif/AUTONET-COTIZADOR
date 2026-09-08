@@ -392,4 +392,58 @@ for (const cv of cleanVersionTests) {
   console.log(`[PASS] cleanVersion: "${cv.raw}" -> "${cleaned}"`);
 }
 
+console.log('\n=== TEST 5: PARSERS NUMÉRICOS ARGENTINOS (SECCIÓN 8 Y 9) ===');
+function parseArgentineInteger(val) {
+  if (val === undefined || val === null) return null;
+  if (typeof val === 'number') return isNaN(val) ? null : Math.round(Math.abs(val));
+  let clean = String(val).trim();
+  if (!clean) return null;
+  clean = clean.replace(/^[^\d\-+]+|[^\d]+$/g, '').trim();
+  if (clean.includes(',')) {
+    const commaParts = clean.split(',');
+    clean = commaParts[0];
+  }
+  const cleanDot = clean.replace(/\./g, '');
+  const digitsOnly = cleanDot.replace(/[^\d]/g, '');
+  if (!digitsOnly) return null;
+  const parsed = parseInt(digitsOnly, 10);
+  return isNaN(parsed) ? null : parsed;
+}
+
+function parsePrice(val) {
+  if (val === undefined || val === null) return null;
+  if (typeof val === 'number') return isNaN(val) ? null : Math.round(Math.abs(val));
+  const clean = String(val).replace(/[\$u\$sARSUSD]/gi, '').trim();
+  return parseArgentineInteger(clean);
+}
+
+const numTests = [
+  { input: '136.000', expected: 136000 },
+  { input: '50.000', expected: 50000 },
+  { input: '$29.900.000', expected: 29900000 },
+  { input: '29.900.000,00', expected: 29900000 },
+  { input: '0', expected: 0 },
+  { input: '107.000 km', expected: 107000 }
+];
+
+for (const nt of numTests) {
+  const res = parseArgentineInteger(nt.input);
+  assert.strictEqual(res, nt.expected, `parseArgentineInteger falló para ${nt.input}`);
+  console.log(`[PASS] parseArgentineInteger: "${nt.input}" -> ${res}`);
+}
+
+const priceTests = [
+  { input: '$ 29.900.000', expected: 29900000 },
+  { input: '$18.500.000,00', expected: 18500000 },
+  { input: '25.000.000', expected: 25000000 }
+];
+
+for (const pt of priceTests) {
+  const res = price(pt.input);
+  assert.strictEqual(res, pt.expected, `parsePrice falló para ${pt.input}`);
+  console.log(`[PASS] parsePrice: "${pt.input}" -> ${res}`);
+}
+
+function price(val) { return parsePrice(val); }
+
 console.log('\nTODAS LAS PRUEBAS DE PARSING Y NORMALIZACIÓN COMPLETADAS CON ÉXITO.');

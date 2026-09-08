@@ -347,6 +347,62 @@ export const UpdateStockView: React.FC<UpdateStockViewProps> = ({
 
               {diffResult.diagnostics.discardedRecords > 0 && (
                 <div className="mt-3 pt-3 border-t border-slate-100">
+                  {/* Resumen de causas agrupadas */}
+                  {diffResult.diagnostics.discardedSummary && (
+                    <div className="mb-3">
+                      <span className="text-[11px] font-bold text-slate-600 uppercase block mb-1.5">
+                        Causas principales de descarte:
+                      </span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {diffResult.diagnostics.discardedSummary.patenteNoDetectada > 0 && (
+                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-900 border border-amber-200">
+                            Patente no detectada: {diffResult.diagnostics.discardedSummary.patenteNoDetectada}
+                          </span>
+                        )}
+                        {diffResult.diagnostics.discardedSummary.patenteInvalida > 0 && (
+                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-900 border border-red-200">
+                            Patente inválida: {diffResult.diagnostics.discardedSummary.patenteInvalida}
+                          </span>
+                        )}
+                        {diffResult.diagnostics.discardedSummary.marcaNoDetectada > 0 && (
+                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-900 border border-orange-200">
+                            Marca no detectada: {diffResult.diagnostics.discardedSummary.marcaNoDetectada}
+                          </span>
+                        )}
+                        {diffResult.diagnostics.discardedSummary.modeloNoDetectado > 0 && (
+                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-900 border border-yellow-200">
+                            Modelo no detectado: {diffResult.diagnostics.discardedSummary.modeloNoDetectado}
+                          </span>
+                        )}
+                        {diffResult.diagnostics.discardedSummary.anioInvalido > 0 && (
+                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-900 border border-rose-200">
+                            Año inválido: {diffResult.diagnostics.discardedSummary.anioInvalido}
+                          </span>
+                        )}
+                        {diffResult.diagnostics.discardedSummary.kmInvalido > 0 && (
+                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-900 border border-indigo-200">
+                            KM inválido: {diffResult.diagnostics.discardedSummary.kmInvalido}
+                          </span>
+                        )}
+                        {diffResult.diagnostics.discardedSummary.precioInvalido > 0 && (
+                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-900 border border-purple-200">
+                            Precio inválido: {diffResult.diagnostics.discardedSummary.precioInvalido}
+                          </span>
+                        )}
+                        {diffResult.diagnostics.discardedSummary.columnasIncompletas > 0 && (
+                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-slate-200 text-slate-800 border border-slate-300">
+                            Columnas incompletas: {diffResult.diagnostics.discardedSummary.columnasIncompletas}
+                          </span>
+                        )}
+                        {diffResult.diagnostics.discardedSummary.otros > 0 && (
+                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200">
+                            Otros motivos: {diffResult.diagnostics.discardedSummary.otros}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   <button
                     onClick={() => setShowDiscarded(!showDiscarded)}
                     className="text-xs text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1.5 cursor-pointer"
@@ -354,20 +410,76 @@ export const UpdateStockView: React.FC<UpdateStockViewProps> = ({
                     <span>
                       {showDiscarded 
                         ? 'Ocultar detalle de filas descartadas' 
-                        : `Ver detalle de las ${diffResult.diagnostics.discardedRecords} filas descartadas`}
+                        : `Ver detalle forense de las ${diffResult.diagnostics.discardedRecords} filas descartadas`}
                     </span>
                     <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showDiscarded ? 'rotate-180' : ''}`} />
                   </button>
 
                   {showDiscarded && (
-                    <div className="mt-2.5 p-3 bg-amber-50/60 rounded-lg border border-amber-200/70 max-h-44 overflow-y-auto space-y-2 text-xs">
+                    <div className="mt-2.5 p-3 bg-amber-50/60 rounded-lg border border-amber-200/70 max-h-64 overflow-y-auto space-y-2.5 text-xs">
                       {diffResult.diagnostics.discardedDetails.map((item, dIdx) => (
-                        <div key={dIdx} className="bg-white p-2.5 rounded border border-amber-100 shadow-2xs">
-                          <p className="font-semibold text-amber-900">{item.reason}</p>
+                        <div key={dIdx} className="bg-white p-3 rounded-lg border border-amber-200/80 shadow-2xs space-y-1.5">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <span className="font-bold text-amber-950 flex items-center gap-1.5">
+                              {item.page ? (
+                                <span className="px-1.5 py-0.5 bg-amber-100 text-amber-900 rounded font-mono text-[10px]">
+                                  Pág {item.page} · Fila {item.rowNumber ?? dIdx + 1}
+                                </span>
+                              ) : null}
+                              {item.reason}
+                            </span>
+                            {item.patenteDetectada && (
+                              <span className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded font-mono font-bold text-[11px]">
+                                Patente: {item.patenteDetectada}
+                              </span>
+                            )}
+                          </div>
+
+                          {(item.descripcionDetectada || item.anioDetectado || item.kmDetectado || item.precioDetectado) && (
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[11px] bg-slate-50 p-2 rounded border border-slate-200/60">
+                              {item.descripcionDetectada && (
+                                <div className="col-span-2 sm:col-span-4">
+                                  <span className="text-slate-500 font-semibold">Descripción: </span>
+                                  <span className="text-slate-800">{item.descripcionDetectada}</span>
+                                </div>
+                              )}
+                              {item.anioDetectado && (
+                                <div>
+                                  <span className="text-slate-500 font-semibold">Año: </span>
+                                  <span className="text-slate-800">{item.anioDetectado}</span>
+                                </div>
+                              )}
+                              {item.kmDetectado && (
+                                <div>
+                                  <span className="text-slate-500 font-semibold">KM: </span>
+                                  <span className="text-slate-800">{item.kmDetectado}</span>
+                                </div>
+                              )}
+                              {item.precioDetectado && (
+                                <div className="col-span-2">
+                                  <span className="text-slate-500 font-semibold">Precio: </span>
+                                  <span className="text-slate-800">{item.precioDetectado}</span>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
                           {item.raw && (
-                            <p className="text-[11px] text-slate-500 font-mono truncate mt-0.5" title={item.raw}>
-                              {item.raw}
-                            </p>
+                            <div>
+                              <span className="text-[10px] text-slate-400 font-mono block">Texto crudo:</span>
+                              <p className="text-[11px] text-slate-600 font-mono break-all bg-slate-50 px-2 py-1 rounded">
+                                {item.raw}
+                              </p>
+                            </div>
+                          )}
+
+                          {item.tokensWithX && (
+                            <div>
+                              <span className="text-[10px] text-slate-400 font-mono block">Tokens (con coordenada X pt):</span>
+                              <p className="text-[10px] text-slate-500 font-mono break-all bg-slate-100/70 px-2 py-1 rounded">
+                                {item.tokensWithX}
+                              </p>
+                            </div>
                           )}
                         </div>
                       ))}
