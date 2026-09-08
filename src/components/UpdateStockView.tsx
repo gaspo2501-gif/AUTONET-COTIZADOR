@@ -14,7 +14,8 @@ import {
   PlusCircle, 
   HelpCircle,
   Sparkles,
-  Info
+  Info,
+  ChevronDown
 } from 'lucide-react';
 import { DiffResult, Vehicle } from '../types/stock';
 import { pdfService } from '../services/pdfService';
@@ -39,6 +40,7 @@ export const UpdateStockView: React.FC<UpdateStockViewProps> = ({
   const [pdfRawInfo, setPdfRawInfo] = useState<{ pages: number; textSnippet: string } | null>(null);
   const [appliedSuccess, setAppliedSuccess] = useState(false);
   const [missingActions, setMissingActions] = useState<Record<string, 'mantener' | 'vendido' | 'reservado' | 'eliminar'>>({});
+  const [showDiscarded, setShowDiscarded] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -72,7 +74,8 @@ export const UpdateStockView: React.FC<UpdateStockViewProps> = ({
       const diff = pdfService.compareWithStock(
         parsed.extractedVehicles,
         currentStock,
-        file.name
+        file.name,
+        parsed.diagnostics
       );
       setDiffResult(diff);
     } catch (err) {
@@ -97,7 +100,15 @@ export const UpdateStockView: React.FC<UpdateStockViewProps> = ({
       const simulatedDiff = pdfService.compareWithStock(
         simulatedVehicles,
         currentStock,
-        `Lista_Autonet_Quincenal_${new Date().toLocaleDateString('es-AR').replace(/\//g, '-')}.pdf`
+        `Lista_Autonet_Quincenal_${new Date().toLocaleDateString('es-AR').replace(/\//g, '-')}.pdf`,
+        {
+          pageCount: 7,
+          linesExtracted: currentStock.length + 10,
+          recordsReconstructed: simulatedVehicles.length,
+          validRecords: simulatedVehicles.length,
+          discardedRecords: 0,
+          discardedDetails: [],
+        }
       );
       setDiffResult(simulatedDiff);
       setIsProcessing(false);
@@ -229,6 +240,136 @@ export const UpdateStockView: React.FC<UpdateStockViewProps> = ({
       {diffResult && !appliedSuccess && (
         <div className="space-y-6">
           
+          {/* ALERTA CRÍTICA DE SEGURIDAD SI ESTÁ BLOQUEADO */}
+          {diffResult.safetyValidation?.isBlocked && (
+            <div className="bg-red-50 border-2 border-red-300 rounded-2xl p-5 text-red-950 shadow-sm flex items-start gap-4">
+              <div className="p-2.5 bg-red-100 text-red-700 rounded-xl shrink-0 mt-0.5">
+                <ShieldAlert className="w-7 h-7" />
+              </div>
+              <div className="space-y-1.5 flex-1">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-extrabold text-base text-red-950">
+                    Actualización Bloqueada por Seguridad
+                  </h4>
+                  <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-red-200 text-red-900 uppercase tracking-wide">
+                    Acción Preventiva
+                  </span>
+                </div>
+                <p className="text-xs text-red-900 leading-relaxed font-medium">
+                  {diffResult.safetyValidation.blockedReason}
+                </p>
+                <div className="mt-2 text-[11px] bg-white/70 border border-red-200 rounded-lg p-2.5 text-red-800">
+                  <p className="font-semibold">¿Por qué sucede esto?</p>
+                  <p className="text-red-700 mt-0.5">
+                    Para proteger el stock comercial existente ({currentStock.length} unidades), el sistema impide aplicar un archivo que contenga menos del 60% de las unidades actuales. Verifique que el archivo PDF no esté dañado o cortado.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ADVERTENCIA INFORMATIVA SI HAY MUCHAS BAJAS PERO NO BLOQUEADO */}
+          {!diffResult.safetyValidation?.isBlocked && diffResult.safetyValidation?.warningMessage && (
+            <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 text-amber-900 flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+              <div className="text-xs">
+                <span className="font-bold block text-amber-950 mb-0.5">Atención</span>
+                <p>{diffResult.safetyValidation.warningMessage}</p>
+              </div>
+            </div>
+          )}
+
+          {/* DIAGNÓSTICO VISUAL DE EXTRACCIÓN */}
+          {diffResult.diagnostics && (
+            <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-blue-600" />
+                  <span className="text-xs font-bold text-slate-800">
+                    Diagnóstico de extracción del documento
+                  </span>
+                </div>
+                <span className="text-[11px] text-slate-500 font-mono">
+                  {diffResult.archivoNombre}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mt-3">
+                <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                  <span className="text-[10px] uppercase font-bold text-slate-500 block">Páginas leídas</span>
+                  <span className="text-base font-black text-slate-800 font-mono">
+                    {diffResult.diagnostics.pageCount}
+                  </span>
+                </div>
+                <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                  <span className="text-[10px] uppercase font-bold text-slate-500 block">Líneas analizadas</span>
+                  <span className="text-base font-black text-slate-800 font-mono">
+                    {diffResult.diagnostics.linesExtracted}
+                  </span>
+                </div>
+                <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                  <span className="text-[10px] uppercase font-bold text-slate-500 block">Filas reconstruidas</span>
+                  <span className="text-base font-black text-slate-800 font-mono">
+                    {diffResult.diagnostics.recordsReconstructed}
+                  </span>
+                </div>
+                <div className="bg-emerald-50 p-2.5 rounded-lg border border-emerald-100">
+                  <span className="text-[10px] uppercase font-bold text-emerald-700 block">Unidades válidas</span>
+                  <span className="text-base font-black text-emerald-800 font-mono">
+                    {diffResult.diagnostics.validRecords}
+                  </span>
+                </div>
+                <div className={`p-2.5 rounded-lg border ${
+                  diffResult.diagnostics.discardedRecords > 0 
+                    ? 'bg-amber-50 border-amber-200' 
+                    : 'bg-slate-50 border-slate-100'
+                }`}>
+                  <span className={`text-[10px] uppercase font-bold block ${
+                    diffResult.diagnostics.discardedRecords > 0 ? 'text-amber-800' : 'text-slate-500'
+                  }`}>
+                    Filas descartadas
+                  </span>
+                  <span className={`text-base font-black font-mono ${
+                    diffResult.diagnostics.discardedRecords > 0 ? 'text-amber-800' : 'text-slate-800'
+                  }`}>
+                    {diffResult.diagnostics.discardedRecords}
+                  </span>
+                </div>
+              </div>
+
+              {diffResult.diagnostics.discardedRecords > 0 && (
+                <div className="mt-3 pt-3 border-t border-slate-100">
+                  <button
+                    onClick={() => setShowDiscarded(!showDiscarded)}
+                    className="text-xs text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <span>
+                      {showDiscarded 
+                        ? 'Ocultar detalle de filas descartadas' 
+                        : `Ver detalle de las ${diffResult.diagnostics.discardedRecords} filas descartadas`}
+                    </span>
+                    <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showDiscarded ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {showDiscarded && (
+                    <div className="mt-2.5 p-3 bg-amber-50/60 rounded-lg border border-amber-200/70 max-h-44 overflow-y-auto space-y-2 text-xs">
+                      {diffResult.diagnostics.discardedDetails.map((item, dIdx) => (
+                        <div key={dIdx} className="bg-white p-2.5 rounded border border-amber-100 shadow-2xs">
+                          <p className="font-semibold text-amber-900">{item.reason}</p>
+                          {item.raw && (
+                            <p className="text-[11px] text-slate-500 font-mono truncate mt-0.5" title={item.raw}>
+                              {item.raw}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+          
           {/* Métricas de la Actualización */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs">
@@ -336,10 +477,24 @@ export const UpdateStockView: React.FC<UpdateStockViewProps> = ({
               <button
                 id="btn-confirmar-actualizacion"
                 onClick={handleConfirmUpdate}
-                className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold shadow-sm transition-all flex items-center gap-2"
+                disabled={diffResult.safetyValidation?.isBlocked}
+                className={`px-6 py-2.5 rounded-xl text-xs font-extrabold shadow-sm transition-all flex items-center gap-2 ${
+                  diffResult.safetyValidation?.isBlocked
+                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300'
+                    : 'bg-blue-600 hover:bg-blue-700 text-white'
+                }`}
+                title={
+                  diffResult.safetyValidation?.isBlocked 
+                    ? 'Actualización bloqueada por seguridad' 
+                    : 'Confirmar actualización del stock'
+                }
               >
                 <CheckCircle2 className="w-4 h-4" />
-                <span>Confirmar actualización</span>
+                <span>
+                  {diffResult.safetyValidation?.isBlocked 
+                    ? 'Actualización Bloqueada' 
+                    : 'Confirmar actualización'}
+                </span>
               </button>
             </div>
           </div>

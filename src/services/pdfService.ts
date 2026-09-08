@@ -7,7 +7,10 @@ import {
   VehicleFuel,
   VehicleTransmission,
   VehicleTraction,
-  VehicleStatus
+  VehicleStatus,
+  ParsingDiagnostics,
+  DiscardedRecordDetail,
+  SafetyValidation
 } from '../types/stock';
 import { autonetService } from './autonetService';
 
@@ -42,229 +45,534 @@ export interface ParsePdfResult {
   rawText: string;
   extractedVehicles: Partial<Vehicle>[];
   parseWarnings: string[];
+  diagnostics: ParsingDiagnostics;
 }
 
 /**
- * Normaliza una patente argentina eliminando espacios y guiones y llevándola a mayúsculas.
- * Soporta formato Mercosur (AA 123 BB / AF 892 PL) y formato previo (ABC 123).
+ * Normaliza una patente argentina eliminando espacios, guiones y caracteres no alfanuméricos,
+ * convirtiendo a mayúsculas y aplicando trim.
+ * 
+ * Ejemplos:
+ * "AD835UE", "AD 835 UE", "ad835ue", " AD835UE ", "AD-835-UE" -> "AD835UE"
+ * "AG560PC", "AI029HY", "AF930LL" -> Mercosur
+ * "ABC 123", "abc-123" -> Tradicional
+ * "RA28489", "HF13759" -> Especiales / internos
  */
-export function normalizePatente(patente?: string): string {
-  if (!patente) return '';
-  return patente.replace(/[\s\-_.]+/g, '').toUpperCase().trim();
+export function normalizePlate(plate?: string): string {
+  if (!plate) return '';
+  return plate.toString().toUpperCase().replace(/[^A-Z0-9]/g, '').trim();
 }
 
 /**
- * Genera una clave única para un vehículo si no tiene patente explícita.
+ * Alias de compatibilidad hacia atrás
+ */
+export const normalizePatente = normalizePlate;
+
+/**
+ * Genera una clave única de comparación para un vehículo.
+ * IDENTIFICADOR PRINCIPAL: PATENTE normalizada.
+ * REGLA ESTRICTA: NO usar el número de fila / orden de la primera columna como ID,
+ * ya que cambia entre versiones del PDF.
+ * Fallback únicamente si la unidad no posee patente válida: marca + modelo + versión + año normalizados.
  */
 export function generateVehicleKey(v: Partial<Vehicle>): string {
-  if (v.patente && v.patente.trim()) {
-    return normalizePatente(v.patente);
+  const plate = normalizePlate(v.patente);
+  if (plate && plate.length >= 5) {
+    return plate;
   }
-  const marca = (v.marca || '').toLowerCase().trim();
-  const modelo = (v.modelo || '').toLowerCase().trim();
+  const marca = (v.marca || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const modelo = (v.modelo || '').toLowerCase().replace(/[^a-z0-9]/g, '');
   const anio = v.anio || '';
-  const version = (v.version || '').toLowerCase().trim();
-  return `key_${marca}_${modelo}_${anio}_${version}`.replace(/\s+/g, '_');
+  const version = (v.version || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  return `fallback_${marca}_${modelo}_${anio}_${version}`;
 }
+
+const KNOWN_BRANDS: { match: RegExp; standard: string }[] = [
+  { match: /^(VOLKSWAGEN|VW)\b/i, standard: 'Volkswagen' },
+  { match: /^TOYOTA\b/i, standard: 'Toyota' },
+  { match: /^FORD\b/i, standard: 'Ford' },
+  { match: /^CHEVROLET\b/i, standard: 'Chevrolet' },
+  { match: /^FIAT\b/i, standard: 'Fiat' },
+  { match: /^RENAULT\b/i, standard: 'Renault' },
+  { match: /^PEUGEOT\b/i, standard: 'Peugeot' },
+  { match: /^JEEP\b/i, standard: 'Jeep' },
+  { match: /^NISSAN\b/i, standard: 'Nissan' },
+  { match: /^(CITROEN|CITROËN)\b/i, standard: 'Citroën' },
+  { match: /^HONDA\b/i, standard: 'Honda' },
+  { match: /^AUDI\b/i, standard: 'Audi' },
+  { match: /^BMW\b/i, standard: 'BMW' },
+  { match: /^MERCEDES([-\s]BENZ)?\b/i, standard: 'Mercedes-Benz' },
+  { match: /^RAM\b/i, standard: 'RAM' },
+  { match: /^CHERY\b/i, standard: 'Chery' },
+  { match: /^HYUNDAI\b/i, standard: 'Hyundai' },
+  { match: /^KIA\b/i, standard: 'Kia' },
+  { match: /^MITSUBISHI\b/i, standard: 'Mitsubishi' },
+  { match: /^DS\b/i, standard: 'DS' },
+  { match: /^BAIC\b/i, standard: 'BAIC' },
+  { match: /^SUBARU\b/i, standard: 'Subaru' },
+  { match: /^SUZUKI\b/i, standard: 'Suzuki' },
+];
+
+const KNOWN_MODELS = [
+  'COROLLA CROSS', 'C3 AIRCROSS', 'C4 CACTUS', 'DUSTER OROCH', 'SANDERO STEPWAY',
+  'GOL TREND', 'T CROSS', 'T-CROSS', 'TIGGO 4', 'S 10', 'FOX CROSSFOX', 'GRAND CHEROKEE',
+  'CRUZE', 'ONIX', 'PRISMA', 'SPIN', 'TRACKER', 'BERLINGO', 'C3', 'C4',
+  'ARGO', 'CRONOS', 'FASTBACK', 'PALIO', 'PULSE', 'TORO', 'MOBI', 'STRADA', 'FIORINO', 'SIENA',
+  'ECOSPORT', 'FIESTA', 'FOCUS', 'KA', 'KUGA', 'MAVERICK', 'RANGER', 'TERRITORY', 'MONDEO',
+  'HRV', 'WRV', 'CRV', 'CIVIC', 'FIT',
+  'CRETA', 'TUCSON', 'SANTA FE', 'COMPASS', 'PATRIOT', 'RENEGADE', 'WRANGLER',
+  'SOUL', 'SPORTAGE', 'SELTOS', 'KICKS', 'NOTE', 'SENTRA', 'FRONTIER', 'VERSA', 'MARCH',
+  '2008', '208', '3008', '308', '408', 'PARTNER',
+  'ARKANA', 'CAPTUR', 'DUSTER', 'FLUENCE', 'KARDIAN', 'KWID', 'LOGAN', 'SANDERO', 'KANGOO', 'ALASKAN', 'MASTER',
+  'COROLLA', 'ETIOS', 'HILUX', 'YARIS', 'SW4', 'RAV4',
+  'AMAROK', 'GOLF', 'NIVUS', 'POLO', 'SURAN', 'TAOS', 'TERA', 'UP', 'VENTO', 'VIRTUS', 'FOX', 'SAVEIRO', 'TIGUAN'
+];
 
 export class PdfService {
   /**
-   * Extrae texto crudo y detecta vehículos preliminares de cualquier archivo PDF cargado.
-   * Diseñado de manera tolerante para que no falle con ningún PDF.
+   * Extrae líneas de texto preservando la estructura horizontal y vertical de una página PDF.
+   * Evita agrupar toda la página en una sola línea.
    */
-  public async extractFromPdfFile(file: File): Promise<ParsePdfResult> {
-    try {
-      const arrayBuffer = await file.arrayBuffer();
-      const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
-      const pdf = await loadingTask.promise;
-      
-      let fullText = '';
-      const warnings: string[] = [];
-
-      for (let i = 1; i <= pdf.numPages; i++) {
-        try {
-          const page = await pdf.getPage(i);
-          const textContent = await page.getTextContent();
-          const pageText = textContent.items
-            .map((item: any) => item.str || '')
-            .join(' ');
-          fullText += `\n--- PÁGINA ${i} ---\n` + pageText;
-        } catch (err) {
-          warnings.push(`No se pudo leer el texto de la página ${i}`);
-        }
-      }
-
-      const extractedVehicles = this.extractVehiclesFromRawText(fullText);
-
-      return {
-        fileName: file.name,
-        fileSize: file.size,
-        pageCount: pdf.numPages,
-        rawText: fullText,
-        extractedVehicles,
-        parseWarnings: warnings,
-      };
-    } catch (err: any) {
-      console.error('Error al procesar archivo PDF:', err);
-      return {
-        fileName: file.name,
-        fileSize: file.size,
-        pageCount: 1,
-        rawText: '',
-        extractedVehicles: [],
-        parseWarnings: [`Error al procesar el archivo PDF: ${err?.message || 'Formato o permisos no legibles'}. También puede utilizar la opción de pegar texto copiado del PDF.`],
-      };
+  private extractLinesFromTextContent(textContent: any): string[] {
+    if (!textContent || !Array.isArray(textContent.items)) {
+      return [];
     }
+
+    interface TextToken {
+      str: string;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    }
+
+    const tokens: TextToken[] = [];
+    for (const item of textContent.items) {
+      if (item && typeof item.str === 'string') {
+        const text = item.str;
+        if (text.trim().length === 0) continue;
+        const transform = Array.isArray(item.transform) ? item.transform : [1, 0, 0, 1, 0, 0];
+        tokens.push({
+          str: text,
+          x: typeof transform[4] === 'number' ? transform[4] : 0,
+          y: typeof transform[5] === 'number' ? transform[5] : 0,
+          width: typeof item.width === 'number' ? item.width : 0,
+          height: typeof item.height === 'number' ? item.height : 0,
+        });
+      }
+    }
+
+    if (tokens.length === 0) return [];
+
+    // Ordenar de arriba a abajo (en coordenadas PDF, 'y' mayor está más arriba en la página)
+    // Para elementos con similar altura 'y', ordenar de izquierda a derecha (x menor primero)
+    tokens.sort((a, b) => {
+      if (Math.abs(a.y - b.y) > 3.5) {
+        return b.y - a.y;
+      }
+      return a.x - b.x;
+    });
+
+    const lines: string[] = [];
+    let currentLineTokens: TextToken[] = [];
+    let currentLineY: number | null = null;
+
+    for (const token of tokens) {
+      if (currentLineY === null) {
+        currentLineY = token.y;
+        currentLineTokens.push(token);
+      } else if (Math.abs(token.y - currentLineY) <= 3.5) {
+        currentLineTokens.push(token);
+      } else {
+        currentLineTokens.sort((a, b) => a.x - b.x);
+        const lineText = currentLineTokens.map((t) => t.str).join(' ').replace(/\s+/g, ' ').trim();
+        if (lineText) lines.push(lineText);
+
+        currentLineTokens = [token];
+        currentLineY = token.y;
+      }
+    }
+
+    if (currentLineTokens.length > 0) {
+      currentLineTokens.sort((a, b) => a.x - b.x);
+      const lineText = currentLineTokens.map((t) => t.str).join(' ').replace(/\s+/g, ' ').trim();
+      if (lineText) lines.push(lineText);
+    }
+
+    return lines;
   }
 
   /**
-   * Permite procesar texto copiado o extraído directamente del PDF.
+   * Identifica encabezados, pies de página o separadores de página que no corresponden a registros de vehículos.
    */
-  public extractFromText(rawText: string, fileName: string = 'Texto_PDF.txt'): ParsePdfResult {
-    const extractedVehicles = this.extractVehiclesFromRawText(rawText);
+  private isHeaderOrFooter(line: string): boolean {
+    const t = line.trim();
+    if (!t) return true;
+    if (/^---\s*P[AÁ]GINA\s+\d+(\s+DE\s+\d+)?\s*---$/i.test(t)) return true;
+    if (/^P[AÁ]GINA\s+\d+(\s+DE\s+\d+)?$/i.test(t)) return true;
+    if (/^AUTONET(\s+USADOS(\s+SELECCIONADOS)?)?$/i.test(t)) return true;
+    if (/^STOCK(\s+DE)?\s+(UNIDADES\s+)?(DISPONIBLES|USADOS)/i.test(t)) return true;
+    if (/^LISTADO?\s+DE\s+(STOCK|PRECIOS|UNIDADES)/i.test(t)) return true;
+    // Encabezados de columnas de la tabla
+    if (
+      /\b(ORDEN|CAT|DOMINIO|PATENTE|A[ÑN]O|KM|KILOMETRAJE|EMPRESA|PRECIO|TOMA)\b/i.test(t) &&
+      /\b(MARCA|MODELO|VERSION|UB)\b/i.test(t)
+    ) {
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Determina si un texto acumulado ya cuenta con patente y precio válidos (registro completo).
+   */
+  private hasPriceAndPlate(text: string): boolean {
+    const hasPrice = /\b\d{1,3}\.\d{3}\.\d{3}\b|\b\d{7,9}\b/.test(text);
+    const hasPlateAndYear = /\b[A-Z0-9]{6,8}\s+(199\d|20[0-2]\d|2030)\b/i.test(text);
+    return hasPrice && hasPlateAndYear;
+  }
+
+  /**
+   * Reconstruye filas fragmentadas de la tabla de Autonet.
+   * Maneja casos donde una unidad se divide en 2, 3 o 4 líneas consecutivas.
+   */
+  private reconstructRecordsFromLines(rawLines: string[]): {
+    combinedRecords: { combined: string; lines: string[] }[];
+    discardedRecords: DiscardedRecordDetail[];
+  } {
+    const combinedRecords: { combined: string; lines: string[] }[] = [];
+    const discardedRecords: DiscardedRecordDetail[] = [];
+
+    let currentBuffer: string[] = [];
+
+    const flushCurrent = () => {
+      if (currentBuffer.length === 0) return;
+      const combined = currentBuffer.join(' ').replace(/\s+/g, ' ').trim();
+      if (combined.length > 0) {
+        combinedRecords.push({
+          combined,
+          lines: [...currentBuffer],
+        });
+      }
+      currentBuffer = [];
+    };
+
+    for (let i = 0; i < rawLines.length; i++) {
+      const line = rawLines[i].trim();
+      if (!line) continue;
+      if (this.isHeaderOrFooter(line)) continue;
+
+      // 1. Verificar si la línea empieza con un número de orden
+      const numMatch = line.match(/^(\d{1,3})\b(?:\s+(.*))?$/);
+      if (numMatch) {
+        const num = parseInt(numMatch[1], 10);
+        const rest = (numMatch[2] || '').trim();
+
+        // Caso especial: Tipo (1, 2 o 3) seguido de Patente y Año
+        // Ejemplo: "2 AG560PC 2024 AZUL 38.000 IRUÑA 42.000.000"
+        // Este patrón indica que NO es un número de orden inicial, sino la continuación de la fila con Tipo + Patente + Año
+        const isTipoPatenteYear = (num === 1 || num === 2 || num === 3) && /^[A-Z0-9]{6,8}\s+(199\d|20[0-2]\d|2030)\b/i.test(rest);
+
+        if (isTipoPatenteYear) {
+          currentBuffer.push(line);
+          continue;
+        }
+
+        // Si la línea es únicamente un número aislado (ej: "223")
+        if (!rest) {
+          if (currentBuffer.length === 0) {
+            currentBuffer = [line];
+          } else {
+            const bufText = currentBuffer.join(' ');
+            if (this.hasPriceAndPlate(bufText) || num > 3) {
+              flushCurrent();
+              currentBuffer = [line];
+            } else {
+              currentBuffer.push(line);
+            }
+          }
+          continue;
+        }
+
+        // Si tiene número de orden y texto posterior (ej: "221 P - T VW TAOS 1.4 HIGHLINE")
+        flushCurrent();
+        currentBuffer = [line];
+        continue;
+      }
+
+      // 2. Si no empieza con número: verificar si empieza con Categoría conocida o Marca conocida
+      const startsWithBrand = KNOWN_BRANDS.some((b) => b.match.test(line));
+      const startsWithCat = /^(P\s*-\s*PA\s*0\s*KM|0\s*KM|P\s*-\s*A|P\s*-\s*T|AK|T|C|A|PA|TS|FLOTA)\b/i.test(line);
+
+      if ((startsWithBrand || startsWithCat) && currentBuffer.length > 0 && this.hasPriceAndPlate(currentBuffer.join(' '))) {
+        flushCurrent();
+        currentBuffer = [line];
+        continue;
+      }
+
+      if (currentBuffer.length === 0) {
+        currentBuffer = [line];
+        continue;
+      }
+
+      // 3. De lo contrario, es una línea de continuación de la fila (ej: "P", "A", "-", observaciones, etc.)
+      currentBuffer.push(line);
+    }
+
+    // Vaciar el último buffer
+    flushCurrent();
+
     return {
-      fileName,
-      fileSize: rawText.length,
-      pageCount: 1,
-      rawText,
-      extractedVehicles,
-      parseWarnings: [],
+      combinedRecords,
+      discardedRecords,
     };
   }
 
   /**
-   * Parsea una línea con el formato tabular oficial de las listas de stock de Autonet:
-   * [Orden] [Cat/Origen] [Marca] [Modelo] [Versión] [Ub] [Tipo] [Patente] [Año] [Color] [KM] [Empresa] [Precio] [FechaToma]
+   * Parsea un registro combinado y extrae todos los atributos del vehículo.
    */
-  public parseAutonetLine(line: string, index: number): Partial<Vehicle> | null {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.length < 15) return null;
-
-    // Tail regex para capturar las columnas finales estructuradas
-    const tailRegex = /\s+([A-Z0-9]+)\s+([123])\s+([A-Z0-9]{6,8})\s+(20\d{2})\s+([A-ZÁÉÍÓÚÑ]+)\s+([\d\.]+)\s+(OIL\s+BULL|MIRAGE|IRUÑA|AKIRA|[A-Z\s]+?)\s+([\d\.]+)\s+([\d\/\.\-]+)$/i;
-    const tailMatch = trimmed.match(tailRegex);
-
-    if (!tailMatch) {
-      return null;
+  private parseVehicleRecord(
+    combined: string,
+    rawLines: string[],
+    index: number
+  ): { vehicle: Partial<Vehicle> | null; discardedReason?: string } {
+    const trimmed = combined.trim();
+    if (!trimmed || trimmed.length < 10) {
+      return { vehicle: null, discardedReason: 'Línea vacía o con contenido insuficiente' };
     }
 
-    const ub = tailMatch[1].trim();
-    const patente = tailMatch[3].trim().toUpperCase();
-    const anio = parseInt(tailMatch[4], 10);
-    const rawColor = tailMatch[5].trim();
-    const rawKm = tailMatch[6].replace(/\./g, '');
-    const kilometraje = parseInt(rawKm, 10) || 0;
-    const empresa = tailMatch[7].trim();
-    const rawPrecio = tailMatch[8].replace(/\./g, '');
-    const precio = parseInt(rawPrecio, 10) || 0;
-    const fechaToma = tailMatch[9].trim();
+    // 1. DETECCIÓN DE PATENTE Y AÑO
+    // Prioridad 1: Código alfanumérico (6-8 caracteres) inmediatamente anterior al año de 4 dígitos (1990-2030)
+    let rawPlate = '';
+    let anio = 0;
+    let plateMatchIndex = -1;
 
-    // Resto del texto hacia la izquierda (número de orden, categoría, marca, modelo, versión)
-    const head = trimmed.slice(0, trimmed.length - tailMatch[0].length).trim();
-
-    // Extraer número de orden inicial
-    const orderMatch = head.match(/^\s*(\d+)\s+/);
-    let numOrden = index + 1;
-    let desc = head;
-    if (orderMatch) {
-      numOrden = parseInt(orderMatch[1], 10);
-      desc = head.slice(orderMatch[0].length).trim();
-    }
-
-    // Extraer categoría / condición de origen (ej: P - PA 0 KM, 0 KM, P - A, AK, T, C, A, PA, TS)
-    const catRegex = /^(P\s*-\s*PA\s*0\s*KM|0\s*KM|P\s*-\s*A|AK|T|C|A|PA|TS|FLOTA)\s+/i;
-    const catMatch = desc.match(catRegex);
-    let categoria = '';
-    let cleanDesc = desc;
-    if (catMatch) {
-      categoria = catMatch[1].trim();
-      cleanDesc = desc.slice(catMatch[0].length).trim();
-    }
-
-    // Extraer notas de estado u observaciones insertadas en el modelo
-    let observaciones = '';
-    if (cleanDesc.includes('-')) {
-      const parts = cleanDesc.split('-');
-      if (parts.length > 1) {
-        const potentialNote = parts.slice(1).join('-').trim();
-        if (/NO VENDER|PRENDA|RESERVAD|USADO|ENTREGA/i.test(potentialNote)) {
-          observaciones = potentialNote;
-          cleanDesc = parts[0].trim();
+    // Patrón con patente contigua al año (ej: "AG560PC 2024", "AI029HY 2026", "AD835UE 2023", "RA28489 2021", "HF13759 2020")
+    const preYearMatch = trimmed.match(/\b([A-Z0-9]{6,8})\s+(199\d|20[0-2]\d|2030)\b/i);
+    if (preYearMatch) {
+      rawPlate = preYearMatch[1];
+      anio = parseInt(preYearMatch[2], 10);
+      plateMatchIndex = preYearMatch.index!;
+    } else {
+      // Patrón con espacios dentro de la patente (ej: "AG 560 PC 2024" o "ABC 123 2018")
+      const spacedPlateMatch = trimmed.match(/\b([A-Z]{2}\s+[0-9]{3}\s+[A-Z]{2}|[A-Z]{3}\s+[0-9]{3})\s+(199\d|20[0-2]\d|2030)\b/i);
+      if (spacedPlateMatch) {
+        rawPlate = spacedPlateMatch[1];
+        anio = parseInt(spacedPlateMatch[2], 10);
+        plateMatchIndex = spacedPlateMatch.index!;
+      } else {
+        // Fallback: buscar patente estándar en cualquier posición
+        const genericPlateMatch = trimmed.match(/\b([A-Z]{2}\s?[0-9]{3}\s?[A-Z]{2}|[A-Z]{3}\s?[0-9]{3}|[A-Z]{2}[0-9]{5})\b/i);
+        if (genericPlateMatch) {
+          rawPlate = genericPlateMatch[1];
+          plateMatchIndex = genericPlateMatch.index!;
+        }
+        const genericYearMatch = trimmed.match(/\b(199\d|20[0-2]\d|2030)\b/);
+        if (genericYearMatch) {
+          anio = parseInt(genericYearMatch[1], 10);
         }
       }
     }
 
-    const knownBrands = [
-      'CHERY', 'CHEVROLET', 'CITROEN', 'CITROËN', 'FIAT', 'FORD',
-      'HONDA', 'HYUNDAI', 'JEEP', 'KIA', 'NISSAN',
-      'PEUGEOT', 'RENAULT', 'TOYOTA', 'VW', 'VOLKSWAGEN', 'AUDI', 'BMW', 'MERCEDES-BENZ', 'RAM'
-    ];
+    const patente = normalizePlate(rawPlate);
 
+    // Validación de patente obligatoria
+    if (!patente || patente.length < 5) {
+      return { 
+        vehicle: null, 
+        discardedReason: `No se detectó patente válida en el registro: "${trimmed.slice(0, 70)}..."` 
+      };
+    }
+
+    // Validación de año obligatorio
+    if (!anio || anio < 1990 || anio > 2030) {
+      return { 
+        vehicle: null, 
+        discardedReason: `No se detectó año de fabricación válido para la patente ${patente}` 
+      };
+    }
+
+    // 2. DETECCIÓN DE PRECIO
+    // Precios en listas argentinas: 42.000.000, 35.900.000, 9.800.000, etc.
+    const priceMatches = [...trimmed.matchAll(/\b(\d{1,3}(?:\.\d{3}){2,3}|\d{7,9})\b/g)];
+    let precio = 0;
+    let priceMatchIndex = -1;
+    let priceMatchStr = '';
+
+    if (priceMatches.length > 0) {
+      // Tomar el último número en los millones que aparezca en la fila
+      const lastMatch = priceMatches[priceMatches.length - 1];
+      const rawP = lastMatch[1].replace(/\./g, '');
+      const p = parseInt(rawP, 10);
+      if (p >= 1000000) {
+        precio = p;
+        priceMatchIndex = lastMatch.index!;
+        priceMatchStr = lastMatch[0];
+      }
+    }
+
+    if (!precio || precio < 1000000) {
+      return { 
+        vehicle: null, 
+        discardedReason: `No se detectó precio de venta válido para la patente ${patente}` 
+      };
+    }
+
+    // 3. DETECCIÓN DE FECHA DE TOMA (posterior al precio)
+    let fechaToma = '-';
+    if (priceMatchIndex !== -1) {
+      const tailAfterPrice = trimmed.slice(priceMatchIndex + priceMatchStr.length).trim();
+      const dateMatch = tailAfterPrice.match(/\b(\d{2}[-/]\d{2}[-/]\d{2,4})\b/);
+      if (dateMatch) {
+        fechaToma = dateMatch[1];
+      } else if (tailAfterPrice.includes('-')) {
+        fechaToma = '-';
+      }
+    }
+
+    // 4. KILOMETRAJE, COLOR Y EMPRESA (segmento intermedio entre Año y Precio)
+    let kilometraje = 0;
+    let color = 'Consultar';
+    let empresa = 'Autonet';
+
+    if (plateMatchIndex !== -1 && priceMatchIndex !== -1) {
+      // Tomar el texto entre el año y el precio
+      const yearStr = String(anio);
+      const yearPos = trimmed.indexOf(yearStr, plateMatchIndex);
+      const midStart = yearPos !== -1 ? yearPos + yearStr.length : plateMatchIndex;
+      const midText = trimmed.slice(midStart, priceMatchIndex).trim();
+
+      // Kilometraje: número con un punto de mil o entre 0 y 500.000
+      const kmMatch = midText.match(/\b(\d{1,3}(?:\.\d{3})|\d{1,6})\b/);
+      if (kmMatch) {
+        const rawKm = kmMatch[1].replace(/\./g, '');
+        kilometraje = parseInt(rawKm, 10) || 0;
+      }
+
+      // Color: palabra antes del KM
+      const knownColorsRegex = /\b(BLANCO|BLANCA|NEGRO|NEGRA|GRIS\s+PLATA|GRIS\s+OSCURO|GRIS|AZUL|ROJO|ROJA|BORDO|BORDÓ|VERDE|MARRON|MARRÓN|BEIGE|ORO|PLATA|NARANJA|AMARILLO)\b/i;
+      const colorMatch = midText.match(knownColorsRegex);
+      if (colorMatch) {
+        let c = colorMatch[1].trim();
+        c = c.charAt(0).toUpperCase() + c.slice(1).toLowerCase();
+        if (c.toLowerCase() === 'blanca') c = 'Blanco';
+        if (c.toLowerCase() === 'roja') c = 'Rojo';
+        if (c.toLowerCase() === 'negra') c = 'Negro';
+        if (c.toLowerCase() === 'bordo') c = 'Bordó';
+        color = c;
+      }
+
+      // Empresa / Concesionario: IRUÑA, MIRAGE, AKIRA, OIL BULL, AUTONET
+      const empresaMatch = midText.match(/\b(OIL\s+BULL|MIRAGE|IRUÑA|AKIRA|AUTONET)\b/i);
+      if (empresaMatch) {
+        empresa = empresaMatch[1].toUpperCase().trim();
+      }
+    }
+
+    // 5. CABECERA (izquierda de la patente): Orden, Categoría, Marca, Modelo, Versión, Observaciones, Ubicacion, Tipo
+    const headText = trimmed.slice(0, plateMatchIndex).trim();
+
+    // Número de orden
+    let numOrden = index + 1;
+    let cleanHead = headText;
+    const orderMatch = cleanHead.match(/^\s*(\d{1,3})\b/);
+    if (orderMatch) {
+      numOrden = parseInt(orderMatch[1], 10);
+      cleanHead = cleanHead.slice(orderMatch[0].length).trim();
+    }
+
+    // Categoría / Condición de origen
+    let categoria = '';
+    const catRegex = /^(P\s*-\s*PA\s*0\s*KM|0\s*KM|P\s*-\s*A|P\s*-\s*T|AK|T|C|A|PA|TS|FLOTA)\b/i;
+    const catMatch = cleanHead.match(catRegex);
+    if (catMatch) {
+      categoria = catMatch[1].trim();
+      cleanHead = cleanHead.slice(catMatch[0].length).trim();
+    }
+
+    // Observaciones dentro de la línea (Sección 9)
+    let observaciones = '';
+    const obsRegex = /(UNIDAD\s+CON\s+PRENDA\s+NO\s+VENDER|NO\s+VENDER\s+EN\s+TRAMITE\s+CON\s+DEMORA|NO\s+VENDER\s+UNIDAD\s+PRENDADA|CANCELACION\s+DE\s+PRENDA\s+EN\s+PROCE[SG]O|NO\s+VENDER|PRENDA|RESERVAD[OA]?|USADO\s+SELECCIONADO)/i;
+    const obsMatch = cleanHead.match(obsRegex);
+    if (obsMatch) {
+      observaciones = obsMatch[1].trim().toUpperCase();
+      cleanHead = cleanHead.replace(obsMatch[0], '').replace(/\s*-\s*/g, ' ').trim();
+    }
+
+    // Ubicación (Ub) y Tipo (1, 2, 3) que se encuentran hacia el final de cleanHead
+    let ub = 'Neuquén';
+    const ubTipoMatch = cleanHead.match(/\s+([A-Z0-9]{1,4})\s+([123])$/i);
+    if (ubTipoMatch) {
+      ub = ubTipoMatch[1].trim().toUpperCase();
+      cleanHead = cleanHead.slice(0, cleanHead.length - ubTipoMatch[0].length).trim();
+    } else {
+      const ubMatch = cleanHead.match(/\s+([PAS]|GR|SOLALIQUE)$/i);
+      if (ubMatch) {
+        ub = ubMatch[1].trim().toUpperCase();
+        cleanHead = cleanHead.slice(0, cleanHead.length - ubMatch[0].length).trim();
+      }
+    }
+
+    // Marca
     let marca = 'Autonet';
-    let modeloYVersion = cleanDesc;
+    let modelPart = cleanHead;
 
-    for (const b of knownBrands) {
-      const bRegex = new RegExp(`^${b}\\b`, 'i');
-      if (bRegex.test(cleanDesc)) {
-        marca = b === 'VW' ? 'Volkswagen' : b.charAt(0) + b.slice(1).toLowerCase();
-        modeloYVersion = cleanDesc.slice(b.length).trim();
+    for (const b of KNOWN_BRANDS) {
+      if (b.match.test(cleanHead)) {
+        marca = b.standard;
+        modelPart = cleanHead.replace(b.match, '').trim();
         break;
       }
     }
 
-    const knownModels = [
-      'COROLLA CROSS', 'C3 AIRCROSS', 'C4 CACTUS', 'DUSTER OROCH', 'SANDERO STEPWAY',
-      'GOL TREND', 'T CROSS', 'TIGGO 4', 'S 10', 'FOX CROSSFOX',
-      'CRUZE', 'ONIX', 'PRISMA', 'SPIN', 'TRACKER', 'BERLINGO', 'C3',
-      'ARGO', 'CRONOS', 'FASTBACK', 'PALIO', 'PULSE',
-      'ECOSPORT', 'FIESTA', 'FOCUS', 'KA', 'KUGA', 'MAVERICK', 'RANGER', 'TERRITORY',
-      'HRV', 'WRV', 'CRETA', 'COMPASS', 'PATRIOT', 'SOUL', 'KICKS', 'NOTE', 'SENTRA',
-      '2008', '208', 'ARKANA', 'CAPTUR', 'DUSTER', 'FLUENCE', 'KARDIAN', 'KWID', 'LOGAN', 'SANDERO',
-      'COROLLA', 'ETIOS', 'HILUX', 'YARIS',
-      'AMAROK', 'GOLF', 'NIVUS', 'POLO', 'SURAN', 'TAOS', 'TERA', 'UP', 'VENTO', 'VIRTUS'
-    ];
-
+    // Modelo y Versión
     let modelo = '';
-    let version = modeloYVersion;
+    let version = modelPart;
 
-    for (const km of knownModels) {
+    for (const km of KNOWN_MODELS) {
       const kmRegex = new RegExp(`^${km}\\b`, 'i');
-      if (kmRegex.test(modeloYVersion)) {
+      if (kmRegex.test(modelPart)) {
         modelo = km;
-        version = modeloYVersion.slice(km.length).trim();
+        version = modelPart.slice(km.length).trim();
         break;
       }
     }
 
     if (!modelo) {
-      const parts = modeloYVersion.split(' ');
+      const parts = modelPart.split(' ');
       modelo = parts[0] || 'Modelo';
       version = parts.slice(1).join(' ') || '';
     }
 
+    // Combustible
     let combustible: VehicleFuel = 'Nafta';
-    if (/\b(TDI|DIESEL|2\.8\s*4X4|2\.2\s*MT|V6)\b/i.test(version) || /AMAROK/i.test(modelo) || /HILUX/i.test(modelo) || /S 10/i.test(modelo) || /RANGER.*2\.2/i.test(cleanDesc)) {
+    if (
+      /\b(TDI|DIESEL|2\.8\s*4X4|2\.2\s*MT|V6)\b/i.test(version) ||
+      /AMAROK/i.test(modelo) ||
+      /HILUX/i.test(modelo) ||
+      /S 10/i.test(modelo) ||
+      /RANGER.*2\.2/i.test(modelPart)
+    ) {
       combustible = 'Diésel';
-    } else if (/\b(HIBRID|HYBRID|HYBRIDA|E TECH)\b/i.test(version + ' ' + cleanDesc)) {
+    } else if (/\b(HIBRID|HYBRID|HYBRIDA|E TECH)\b/i.test(version + ' ' + modelPart)) {
       combustible = 'Híbrido';
     }
 
+    // Transmisión
     let caja: VehicleTransmission = 'Manual';
-    if (/\b(AT|CVT|AUTOMATICA|TIPTRONIC|CVT\s*PRO)\b/i.test(version + ' ' + cleanDesc)) {
+    if (/\b(AT|CVT|AUTOMATICA|TIPTRONIC|CVT\s*PRO)\b/i.test(version + ' ' + modelPart)) {
       caja = 'Automática';
     }
 
+    // Tracción
     let traccion: VehicleTraction = '4x2';
-    if (/\b(4X4|4WD|AWD)\b/i.test(version + ' ' + cleanDesc)) {
+    if (/\b(4X4|4WD|AWD)\b/i.test(version + ' ' + modelPart)) {
       traccion = '4x4';
     }
 
-    let colorNorm = rawColor.charAt(0) + rawColor.slice(1).toLowerCase();
-    if (colorNorm === 'Bordo') colorNorm = 'Bordó';
-    if (colorNorm === 'Blanca') colorNorm = 'Blanco';
-
+    // Estado interno inicial
     let estado: VehicleStatus = 'Disponible';
-    if (/NO VENDER/i.test(observaciones)) {
+    if (/NO VENDER|PRENDA|RESERVAD/i.test(observaciones)) {
       estado = 'Reservado';
     }
 
@@ -272,20 +580,24 @@ export class PdfService {
     if (observaciones) obsList.push(`Observación: ${observaciones}`);
     if (categoria) obsList.push(`Origen: ${categoria}`);
     if (empresa) obsList.push(`Concesionario: ${empresa}`);
-    if (ub) {
-      const ubicacionNombre = ub === 'A' ? 'Allen / Sucursal A' : ub === 'P' ? 'Plottier' : ub === 'S' ? 'Neuquén Salón' : ub === 'GR' ? 'General Roca' : ub;
+    if (ub && ub !== 'Neuquén') {
+      const ubicacionNombre = 
+        ub === 'A' ? 'Allen / Sucursal A' : 
+        ub === 'P' ? 'Plottier' : 
+        ub === 'S' ? 'Neuquén Salón' : 
+        ub === 'GR' ? 'General Roca' : ub;
       obsList.push(`Ubicación: ${ubicacionNombre}`);
     }
     if (fechaToma && fechaToma !== '-') obsList.push(`Fecha toma: ${fechaToma}`);
 
-    return {
+    const vehicle: Partial<Vehicle> = {
       id: `AUT-${String(numOrden).padStart(3, '0')}`,
       numeroOrden: numOrden,
       marca,
       modelo,
       version: version || 'Estándar',
       anio,
-      color: colorNorm,
+      color,
       kilometraje,
       precio,
       moneda: 'ARS',
@@ -304,112 +616,149 @@ export class PdfService {
       sincronizadoAutonetWeb: false,
       origenDato: 'autonet_pdf',
     };
+
+    return { vehicle };
   }
 
   /**
-   * Extrae vehículos de texto reconociendo el formato oficial de Autonet y formatos generales.
+   * Procesa un array de líneas crudas extraídas del documento PDF,
+   * reconstruye filas fragmentadas y genera las estadísticas de diagnóstico.
    */
-  public extractVehiclesFromRawText(rawText: string): Partial<Vehicle>[] {
-    const lines = rawText.split(/[\r\n]+/);
-    const results: Partial<Vehicle>[] = [];
+  public processLinesIntoVehicles(
+    rawLines: string[],
+    pageCount: number
+  ): {
+    vehicles: Partial<Vehicle>[];
+    diagnostics: ParsingDiagnostics;
+  } {
+    const { combinedRecords, discardedRecords } = this.reconstructRecordsFromLines(rawLines);
+    const validVehicles: Partial<Vehicle>[] = [];
     const seenPlates = new Set<string>();
 
-    const knownBrands = [
-      'Volkswagen', 'Toyota', 'Peugeot', 'Ford', 'Chevrolet', 'Jeep', 
-      'Fiat', 'Renault', 'Nissan', 'Honda', 'Citroën', 'Audi', 'BMW', 'Mercedes-Benz', 'RAM', 'Chery'
-    ];
-    const patenteRegex = /\b([A-Z]{2}\s?[0-9]{3}\s?[A-Z]{2}|[A-Z]{3}\s?[0-9]{3})\b/g;
-
-    lines.forEach((line, idx) => {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.length < 5) return;
-
-      // 1. Intentar parser oficial de línea de Autonet
-      const autonetParsed = this.parseAutonetLine(trimmed, idx);
-      if (autonetParsed && autonetParsed.patente) {
-        const cleanPlate = normalizePatente(autonetParsed.patente);
-        if (!seenPlates.has(cleanPlate)) {
-          seenPlates.add(cleanPlate);
-          results.push(autonetParsed);
-          return;
-        }
-      }
-
-      // 2. Parser heurístico de respaldo (si la línea está formateada de otra manera)
-      const patMatches = trimmed.match(patenteRegex);
-      const foundBrand = knownBrands.find((b) =>
-        new RegExp(`\\b${b}\\b`, 'i').test(trimmed)
-      );
-
-      if (patMatches || foundBrand) {
-        const patente = patMatches ? patMatches[0].replace(/\s+/g, '').toUpperCase() : undefined;
-        if (patente && seenPlates.has(patente)) return;
-
-        const yearMatch = trimmed.match(/\b(201[0-9]|202[0-6])\b/);
-        const anio = yearMatch ? parseInt(yearMatch[0], 10) : 2022;
-
-        const priceMatch = trimmed.match(/\$?\s?([0-9]{1,3}(?:\.[0-9]{3})+(?:,[0-9]{2})?|\b[0-9]{7,9}\b)/);
-        let precio: number | undefined;
-        if (priceMatch) {
-          const numStr = priceMatch[1].replace(/\./g, '').replace(',', '.');
-          const p = parseFloat(numStr);
-          if (p > 1000000) precio = p;
-        }
-
-        const kmMatch = trimmed.match(/\b([0-9]{1,3}(?:\.[0-9]{3})*|[0-9]{2,6})\s*(?:km|kms|kilometros)?\b/i);
-        let km: number | undefined;
-        if (kmMatch) {
-          km = parseInt(kmMatch[1].replace(/\./g, ''), 10);
-        }
-
-        let modelo = 'Modelo por verificar';
-        let version = '';
-        if (foundBrand) {
-          const parts = trimmed.split(new RegExp(foundBrand, 'i'))[1] || '';
-          const subTokens = parts.trim().split(/\s+/).slice(0, 3);
-          if (subTokens.length > 0) {
-            modelo = subTokens[0];
-            version = subTokens.slice(1).join(' ');
-          }
-        }
-
-        if (patente || (foundBrand && anio)) {
-          const finalPlate = patente || `S/P-${Math.floor(1000 + Math.random() * 9000)}`;
-          seenPlates.add(finalPlate);
-          results.push({
-            id: `PDF-${idx + 1}`,
-            patente: finalPlate,
-            marca: foundBrand || 'Por determinar',
-            modelo: modelo || 'Por verificar',
-            version: version || '',
-            anio,
-            precio: precio || 25000000,
-            kilometraje: km || 45000,
-            color: 'Consultar',
-            combustible: 'Nafta',
-            caja: 'Manual',
-            traccion: '4x2',
-            estado: 'Disponible',
-            observaciones: `Registro extraído de lista PDF: "${trimmed.slice(0, 100)}"`,
-            origenDato: 'autonet_pdf',
-            fotoPrincipal: '',
-            fotos: [],
-            sincronizadoAutonetWeb: false,
+    combinedRecords.forEach((item, idx) => {
+      const { vehicle, discardedReason } = this.parseVehicleRecord(item.combined, item.lines, idx);
+      if (vehicle && vehicle.patente) {
+        const key = normalizePlate(vehicle.patente);
+        if (!seenPlates.has(key)) {
+          seenPlates.add(key);
+          validVehicles.push(vehicle);
+        } else {
+          discardedRecords.push({
+            raw: item.combined,
+            reason: `Patente duplicada en el archivo (${key})`,
           });
         }
+      } else {
+        discardedRecords.push({
+          raw: item.combined,
+          reason: discardedReason || 'Registro incompleto o con datos faltantes',
+        });
       }
     });
 
-    return results;
+    const diagnostics: ParsingDiagnostics = {
+      pageCount,
+      linesExtracted: rawLines.length,
+      recordsReconstructed: combinedRecords.length,
+      validRecords: validVehicles.length,
+      discardedRecords: discardedRecords.length,
+      discardedDetails: discardedRecords,
+    };
+
+    return {
+      vehicles: validVehicles,
+      diagnostics,
+    };
   }
 
   /**
-   * REGLA FUNDAMENTAL DE LA APLICACIÓN:
-   * "si hay info en la pagina de autonet que la extraiga y sino que se quede solo con la info del listado en pdf ya que es este ultimo quien debe regir toda la app"
-   *
-   * Consulta la web oficial de Autonet para cada patente extraída del PDF:
-   * - Si existe en Autonet: enriquece con fotos oficiales de alta calidad, link de publicación y precio web publicado.
-   * - Si NO existe en Autonet: se mantiene estrictamente con la información del PDF, sin fotos artificiales ni enlaces ficticios.
+   * Extrae texto crudo y detecta vehículos preliminares de cualquier archivo PDF cargado.
+   * Procesa la totalidad de las páginas (7 páginas en listas de Autonet) sin omitir fragmentos.
+   */
+  public async extractFromPdfFile(file: File): Promise<ParsePdfResult> {
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+      const pdf = await loadingTask.promise;
+      
+      let allLines: string[] = [];
+      let fullText = '';
+      const warnings: string[] = [];
+
+      for (let i = 1; i <= pdf.numPages; i++) {
+        try {
+          const page = await pdf.getPage(i);
+          const textContent = await page.getTextContent();
+          const pageLines = this.extractLinesFromTextContent(textContent);
+          allLines = allLines.concat(pageLines);
+          fullText += `\n--- PÁGINA ${i} ---\n` + pageLines.join('\n');
+        } catch (err: any) {
+          warnings.push(`No se pudo leer el texto de la página ${i}: ${err?.message || ''}`);
+        }
+      }
+
+      const { vehicles, diagnostics } = this.processLinesIntoVehicles(allLines, pdf.numPages);
+
+      return {
+        fileName: file.name,
+        fileSize: file.size,
+        pageCount: pdf.numPages,
+        rawText: fullText,
+        extractedVehicles: vehicles,
+        parseWarnings: warnings,
+        diagnostics,
+      };
+    } catch (err: any) {
+      console.error('Error al procesar archivo PDF:', err);
+      const emptyDiag: ParsingDiagnostics = {
+        pageCount: 0,
+        linesExtracted: 0,
+        recordsReconstructed: 0,
+        validRecords: 0,
+        discardedRecords: 0,
+        discardedDetails: [{ raw: '', reason: `Error al abrir el PDF: ${err?.message || 'Archivo dañado o protegido'}` }],
+      };
+      return {
+        fileName: file.name,
+        fileSize: file.size,
+        pageCount: 0,
+        rawText: '',
+        extractedVehicles: [],
+        parseWarnings: [`Error al procesar el archivo PDF: ${err?.message || 'Formato no legible'}`],
+        diagnostics: emptyDiag,
+      };
+    }
+  }
+
+  /**
+   * Permite procesar texto copiado o extraído directamente del PDF.
+   */
+  public extractFromText(rawText: string, fileName: string = 'Texto_PDF.txt'): ParsePdfResult {
+    const rawLines = rawText.split(/[\r\n]+/);
+    const { vehicles, diagnostics } = this.processLinesIntoVehicles(rawLines, 1);
+
+    return {
+      fileName,
+      fileSize: rawText.length,
+      pageCount: 1,
+      rawText,
+      extractedVehicles: vehicles,
+      parseWarnings: [],
+      diagnostics,
+    };
+  }
+
+  /**
+   * Extrae vehículos directamente de texto crudo (compatibilidad con llamadas existentes).
+   */
+  public extractVehiclesFromRawText(rawText: string): Partial<Vehicle>[] {
+    const rawLines = rawText.split(/[\r\n]+/);
+    const { vehicles } = this.processLinesIntoVehicles(rawLines, 1);
+    return vehicles;
+  }
+
+  /**
+   * Enriquece datos con la web de Autonet si la unidad existe en autonet.com.ar.
    */
   public async enrichVehiclesWithAutonetWeb(
     extractedList: Partial<Vehicle>[],
@@ -428,7 +777,7 @@ export class PdfService {
     for (let i = 0; i < total; i++) {
       const v = extractedList[i];
       const copy: Partial<Vehicle> = { ...v };
-      const cleanPlate = normalizePatente(copy.patente);
+      const cleanPlate = normalizePlate(copy.patente);
 
       if (onProgress) {
         onProgress(i + 1, total, cleanPlate || copy.modelo || '');
@@ -438,10 +787,10 @@ export class PdfService {
         try {
           const webDetails = await autonetService.fetchVehicleDetailsByPatente(cleanPlate);
 
-          if (webDetails && (webDetails.fotoPrincipal || (webDetails.fotos && webDetails.fotos.length > 0) || webDetails.urlAutonetOriginal)) {
+          if (webDetails && (webDetails.urlAutonetOriginal || webDetails.precioPublicadoWeb)) {
             webMatchedCount++;
-            copy.fotoPrincipal = webDetails.fotoPrincipal || (webDetails.fotos && webDetails.fotos[0]) || '';
-            copy.fotos = webDetails.fotos || (webDetails.fotoPrincipal ? [webDetails.fotoPrincipal] : []);
+            copy.fotoPrincipal = '';
+            copy.fotos = [];
             copy.urlAutonetOriginal = webDetails.urlAutonetOriginal;
             copy.precioPublicadoWeb = webDetails.precioPublicadoWeb;
             copy.sincronizadoAutonetWeb = true;
@@ -451,7 +800,6 @@ export class PdfService {
               copy.descripcionWeb = webDetails.description;
             }
           } else {
-            // NO se encuentra en la web oficial: se conserva estrictamente la información del PDF
             pdfOnlyCount++;
             copy.fotoPrincipal = '';
             copy.fotos = [];
@@ -460,7 +808,6 @@ export class PdfService {
             copy.urlAutonetOriginal = undefined;
           }
         } catch {
-          // Si ocurre un error de red, el PDF rige por defecto
           pdfOnlyCount++;
           copy.fotoPrincipal = '';
           copy.fotos = [];
@@ -484,18 +831,16 @@ export class PdfService {
   }
 
   /**
-   * Compara los vehículos extraídos de una nueva lista contra el stock actual de la base de datos.
-   * Detecta:
-   * - Nuevos ingresos
-   * - Modificados (con detalle de qué campos cambiaron: precio, km, observaciones, etc.)
-   * - Sin cambios
-   * - Vehículos que ya no aparecen en la lista (posiblemente vendidos por Autonet)
-   * - Conserva la regla de oro: si un vehículo fue marcado 'Vendido' internamente por el asesor, NO se resucita a 'Disponible'.
+   * Compara los vehículos extraídos de una nueva lista contra el stock actual.
+   * Utiliza de forma ESTRICTA la PATENTE normalizada como identificador principal.
+   * Implementa las validaciones de seguridad de bloqueo si el volumen de registros extraídos
+   * es sospechosamente bajo (< 60% del stock anterior) para prevenir eliminaciones masivas por error.
    */
   public compareWithStock(
     extractedList: Partial<Vehicle>[],
     currentStock: Vehicle[],
-    fileName: string = 'Lista_Stock.pdf'
+    fileName: string = 'Lista_Stock.pdf',
+    diagnostics?: ParsingDiagnostics
   ): DiffResult {
     const currentMap = new Map<string, Vehicle>();
     currentStock.forEach((v) => {
@@ -519,7 +864,7 @@ export class PdfService {
       const existing = currentMap.get(key);
 
       if (!existing) {
-        // Vehículo nuevo
+        // Nuevo ingreso detectado
         nuevosCount++;
         diffItems.push({
           patente: incoming.patente || 'S/P',
@@ -528,7 +873,7 @@ export class PdfService {
           vehiculoNuevo: incoming,
         });
       } else {
-        // Vehículo existente: comparar campos
+        // Vehículo existente en stock actual: comparar campos
         const changes: FieldChange[] = [];
 
         // Precio
@@ -604,14 +949,55 @@ export class PdfService {
           vehiculoExistente: existing,
           advertenciaEstado: existing.estado === 'Vendido' 
             ? 'Ya estaba marcado como Vendido.' 
-            : 'No figura en la nueva lista de Autonet. Podría haber sido vendido por otra sucursal o retirado.',
+            : 'No figura en la nueva lista de Autonet. Podría haber sido vendido o retirado.',
         });
       }
     });
 
+    // 3. VALIDACIONES DE SEGURIDAD Y BLOQUEO DE CONFIRMACIÓN (Secciones 3 y 13)
+    const currentCount = currentStock.length;
+    const extractedCount = extractedList.length;
+    const ratio = currentCount > 0 ? extractedCount / currentCount : 1;
+
+    let isBlocked = false;
+    let blockedReason: string | undefined;
+    let warningMessage: string | undefined;
+
+    // Regla 1: Si el nuevo stock es inferior al 60% del stock anterior (cuando stock anterior >= 20)
+    if (currentCount >= 20 && ratio < 0.60) {
+      isBlocked = true;
+      blockedReason = `Se detectó una cantidad inusualmente baja de unidades (${extractedCount} extraídas vs ${currentCount} actuales, ${(ratio * 100).toFixed(1)}%). El archivo puede no haberse interpretado correctamente. La actualización fue bloqueada para evitar eliminar stock por error.`;
+    } 
+    // Regla 2: Parser encuentra menos de 50 registros (cuando stock anterior >= 50)
+    else if (currentCount >= 50 && extractedCount < 50) {
+      isBlocked = true;
+      blockedReason = `El archivo analizado solo contiene ${extractedCount} unidades válidas, mientras que el stock actual cuenta con ${currentCount}. Se bloqueó la confirmación preventiva.`;
+    }
+    // Regla 3: Más del 30% de los registros fueron descartados
+    else if (diagnostics && diagnostics.recordsReconstructed > 10 && (diagnostics.discardedRecords / diagnostics.recordsReconstructed) > 0.30) {
+      isBlocked = true;
+      blockedReason = `Se descartó el ${((diagnostics.discardedRecords / diagnostics.recordsReconstructed) * 100).toFixed(1)}% de las filas por falta de datos esenciales (patente, año o precio). Revise el archivo.`;
+    }
+    // Regla 4: No se detectaron vehículos válidos
+    else if (extractedCount === 0) {
+      isBlocked = true;
+      blockedReason = 'No se detectó ninguna unidad válida en el archivo PDF proporcionado.';
+    }
+    // Advertencia informativa si hay más del 25% de bajas pero no está bloqueado
+    else if (currentCount >= 20 && noAparecenCount > 0.25 * currentCount) {
+      warningMessage = `Atención: Hay ${noAparecenCount} unidades que no figuran en esta lista (${((noAparecenCount / currentCount) * 100).toFixed(1)}% del stock actual). Verifique que correspondan a unidades vendidas o retiradas.`;
+    }
+
+    const safetyValidation: SafetyValidation = {
+      isBlocked,
+      blockedReason,
+      warningMessage,
+      ratio,
+    };
+
     return {
       archivoNombre: fileName,
-      totalEncontrados: extractedList.length,
+      totalEncontrados: extractedCount,
       nuevos: nuevosCount,
       modificados: modificadosCount,
       sinCambios: sinCambiosCount,
@@ -619,33 +1005,33 @@ export class PdfService {
       cambiosPrecio: cambiosPrecioCount,
       items: diffItems,
       timestamp: new Date().toISOString(),
+      diagnostics,
+      safetyValidation,
     };
   }
 
   /**
-   * Genera un lote de prueba simulado realista para que el asesor pueda probar la experiencia completa
-   * de previsualización, tabla de diferencias y confirmación sin esperar a tener el PDF definitivo en mano.
+   * Genera un lote de prueba simulado realista para probar el flujo.
    */
-  public generateSimulatedBatch(currentStock: Vehicle[], scenario: 'quincenal' | 'cambio_precios' | 'ingresos_masivos'): Partial<Vehicle>[] {
-    // Tomar la mayoría de los vehículos existentes para simular continuidad
+  public generateSimulatedBatch(
+    currentStock: Vehicle[], 
+    scenario: 'quincenal' | 'cambio_precios' | 'ingresos_masivos'
+  ): Partial<Vehicle>[] {
     const base: Partial<Vehicle>[] = currentStock.map((v) => ({ ...v }));
 
     if (scenario === 'quincenal') {
-      // 1. Quitar el último vehículo para simular que ya no aparece
       if (base.length > 3) {
         base.pop();
       }
 
-      // 2. Modificar el precio de 2 vehículos (ej. actualizar por inflación/mercado)
       if (base[0]) {
         base[0].precio = (base[0].precio || 30000000) + 1200000;
         base[0].kilometraje = (base[0].kilometraje || 20000) + 1500;
       }
       if (base[1]) {
-        base[1].precio = (base[1].precio || 40000000) - 800000; // Ajuste competitivo
+        base[1].precio = (base[1].precio || 40000000) - 800000;
       }
 
-      // 3. Agregar 2 nuevos vehículos ingresados a stock
       base.push({
         id: 'AUT-113',
         marca: 'Chevrolet',
@@ -661,9 +1047,9 @@ export class PdfService {
         caja: 'Automática',
         traccion: '4x2',
         estado: 'Disponible',
-        observaciones: 'Nuevo ingreso Autonet. Techo solar panorámico, frenado autónomo de emergencia con detector de peatones y alerta de colisión frontal.',
-        fotoPrincipal: 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?auto=format&fit=crop&w=1000&q=80',
-        fotos: ['https://images.unsplash.com/photo-1549399542-7e3f8b79c341?auto=format&fit=crop&w=1000&q=80'],
+        observaciones: 'Nuevo ingreso Autonet.',
+        fotoPrincipal: '',
+        fotos: [],
         urlAutonetOriginal: 'https://autonet.com.ar/usados/chevrolet-tracker-af930ll',
         provinciaRadicacion: 'Neuquén',
       });
@@ -683,9 +1069,9 @@ export class PdfService {
         caja: 'Automática',
         traccion: '4x2',
         estado: 'Disponible',
-        observaciones: 'Sedán deportivo premium. Caja DSG de doble embrague, butacas deportivas calefaccionadas y ventiladas, sistema de audio Beats y suspensión adaptativa.',
-        fotoPrincipal: 'https://images.unsplash.com/photo-1617814076367-b759c7d7e738?auto=format&fit=crop&w=1000&q=80',
-        fotos: ['https://images.unsplash.com/photo-1617814076367-b759c7d7e738?auto=format&fit=crop&w=1000&q=80'],
+        observaciones: 'Sedán deportivo premium.',
+        fotoPrincipal: '',
+        fotos: [],
         urlAutonetOriginal: 'https://autonet.com.ar/usados/volkswagen-vento-gli-af114vk',
         provinciaRadicacion: 'Neuquén',
       });

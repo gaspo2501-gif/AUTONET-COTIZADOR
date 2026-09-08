@@ -1,6 +1,7 @@
 import { INITIAL_STOCK } from '../data/initialStock';
 import { DiffResult, UpdateHistoryRecord, Vehicle, VehicleStatus } from '../types/stock';
 import { autonetService, AutonetSyncResult } from './autonetService';
+import { normalizePlate } from './pdfService';
 
 const STOCK_STORAGE_KEY = 'autonet_stock_v2_real';
 const HISTORY_STORAGE_KEY = 'autonet_history_v2_real';
@@ -176,14 +177,14 @@ class StockService {
 
     // Cargar mapa con patentes normalizadas
     currentStock.forEach((v) => {
-      const key = v.patente.replace(/\s+/g, '').toUpperCase();
+      const key = normalizePlate(v.patente);
       updatedMap.set(key, { ...v });
     });
 
     const nowIso = new Date().toISOString();
 
     diff.items.forEach((item) => {
-      const key = item.patente.replace(/\s+/g, '').toUpperCase();
+      const key = normalizePlate(item.patente);
 
       if (item.tipo === 'nuevo' && item.vehiculoNuevo) {
         // Nuevo ingreso detectado en el PDF (sin fotos)

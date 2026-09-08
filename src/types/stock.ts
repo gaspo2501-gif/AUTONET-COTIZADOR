@@ -65,6 +65,27 @@ export interface VehicleDiffItem {
   advertenciaEstado?: string;
 }
 
+export interface DiscardedRecordDetail {
+  raw: string;
+  reason: string;
+}
+
+export interface ParsingDiagnostics {
+  pageCount: number;
+  linesExtracted: number;
+  recordsReconstructed: number;
+  validRecords: number;
+  discardedRecords: number;
+  discardedDetails: DiscardedRecordDetail[];
+}
+
+export interface SafetyValidation {
+  isBlocked: boolean;
+  blockedReason?: string;
+  warningMessage?: string;
+  ratio: number;
+}
+
 export interface DiffResult {
   archivoNombre: string;
   totalEncontrados: number;
@@ -77,6 +98,8 @@ export interface DiffResult {
   soloPdf?: number;
   items: VehicleDiffItem[];
   timestamp: string;
+  diagnostics?: ParsingDiagnostics;
+  safetyValidation?: SafetyValidation;
 }
 
 export interface UpdateHistoryRecord {
