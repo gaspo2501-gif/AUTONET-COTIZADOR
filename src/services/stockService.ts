@@ -1,7 +1,7 @@
 import { INITIAL_STOCK } from '../data/initialStock';
 import { DiffResult, UpdateHistoryRecord, Vehicle, VehicleStatus } from '../types/stock';
 import { autonetService, AutonetSyncResult } from './autonetService';
-import { normalizePlate, KNOWN_BRANDS } from './pdfService';
+import { normalizePlate, isValidPlate, isCorruptStoredVehicle, KNOWN_BRANDS } from './pdfService';
 import { normalizeMileage } from '../utils/formatters';
 import { getSituacionOperativaInfo } from '../utils/autonetHelpers';
 
@@ -69,11 +69,24 @@ class StockService {
       }
 
       // Saneamiento y corrección de datos existentes:
-      // 1. Normalizar kilometraje a número entero en todos los registros
-      // 2. Corregir registros que hayan quedado con marca "Autonet" o modelo "P"
+      // 1. Purgar registros corruptos artificiales creados por importaciones anteriores (ej: patente "PEUGEOT", marca "Autonet", modelo "Modelo")
+      // 2. Normalizar kilometraje a número entero en todos los registros
+      // 3. Corregir registros que hayan quedado con prefijos desplazados
       const currentList = this.getAllVehicles();
       let hasSanitizationFix = false;
-      const sanitized = currentList.map((v) => {
+
+      // Filtrar y eliminar registros corruptos
+      const filteredList = currentList.filter((v) => {
+        const check = isCorruptStoredVehicle(v);
+        if (check.isCorrupt) {
+          console.warn(`[STOCK-PURGE] Eliminando registro corrupto previo: ID=${v.id}, Patente=${v.patente}, Marca=${v.marca}, Modelo=${v.modelo}. Razón: ${check.reason}`);
+          hasSanitizationFix = true;
+          return false;
+        }
+        return true;
+      });
+
+      const sanitized = filteredList.map((v) => {
         let modified = false;
         const normKm = normalizeMileage(v.kilometraje) ?? 0;
         let km = v.kilometraje;
@@ -245,16 +258,26 @@ class StockService {
     const currentStock = this.getAllVehicles();
     const updatedMap = new Map<string, Vehicle>();
 
-    // Cargar mapa con patentes normalizadas
+    // Cargar mapa con patentes normalizadas, descartando cualquier registro corrupto previo
     currentStock.forEach((v) => {
+      const corruptCheck = isCorruptStoredVehicle(v);
+      if (corruptCheck.isCorrupt) {
+        console.warn(`[BATCH-UPDATE] Descartando vehículo corrupto previo del stock: ID=${v.id}, Patente=${v.patente}`);
+        return;
+      }
       const key = normalizePlate(v.patente);
-      updatedMap.set(key, { ...v });
+      if (key && isValidPlate(key)) {
+        updatedMap.set(key, { ...v });
+      }
     });
 
     const nowIso = new Date().toISOString();
 
     diff.items.forEach((item) => {
       const key = normalizePlate(item.patente);
+      if (!key || !isValidPlate(key)) {
+        return; // Omitir cualquier ítem sin patente válida
+      }
 
       if (item.tipo === 'nuevo' && item.vehiculoNuevo) {
         // Nuevo ingreso detectado en el PDF (sin fotos)
@@ -268,7 +291,7 @@ class StockService {
           kilometraje: normalizeMileage(item.vehiculoNuevo.kilometraje) ?? 0,
           precio: item.vehiculoNuevo.precio || 0,
           moneda: item.vehiculoNuevo.moneda || 'ARS',
-          patente: item.vehiculoNuevo.patente || item.patente,
+          patente: key,
           combustible: item.vehiculoNuevo.combustible || 'Nafta',
           caja: item.vehiculoNuevo.caja || 'Manual',
           traccion: item.vehiculoNuevo.traccion || '4x2',
