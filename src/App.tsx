@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { StockFilters, Vehicle, VehicleStatus, ProvinceTransfer } from './types/stock';
 import { stockService } from './services/stockService';
+import { normalizeMileage } from './utils/formatters';
 import { Navbar, NavTab } from './components/Navbar';
 import { StockFiltersBar } from './components/StockFiltersBar';
 import { VehicleCard } from './components/VehicleCard';
@@ -143,9 +144,17 @@ export default function App() {
       if (filters.anioMin !== '' && v.anio < filters.anioMin) return false;
       if (filters.anioMax !== '' && v.anio > filters.anioMax) return false;
 
-      // Rango de kilometraje
-      if (filters.kmMin !== '' && v.kilometraje < filters.kmMin) return false;
-      if (filters.kmMax !== '' && v.kilometraje > filters.kmMax) return false;
+      // Rango de kilometraje con comparación estrictamente numérica
+      const km = normalizeMileage(v.kilometraje);
+      const minKm = normalizeMileage(filters.kmMin);
+      const maxKm = normalizeMileage(filters.kmMax);
+
+      if (minKm !== null) {
+        if (km === null || km < minKm) return false;
+      }
+      if (maxKm !== null) {
+        if (km === null || km > maxKm) return false;
+      }
 
       // Rango de precio
       if (filters.precioMin !== '' && v.precio < filters.precioMin) return false;
@@ -190,7 +199,7 @@ export default function App() {
 
       if (sortBy === 'precio_asc') return a.precio - b.precio;
       if (sortBy === 'precio_desc') return b.precio - a.precio;
-      if (sortBy === 'km_asc') return a.kilometraje - b.kilometraje;
+      if (sortBy === 'km_asc') return (normalizeMileage(a.kilometraje) ?? 0) - (normalizeMileage(b.kilometraje) ?? 0);
       if (sortBy === 'anio_desc') return b.anio - a.anio;
 
       return 0;

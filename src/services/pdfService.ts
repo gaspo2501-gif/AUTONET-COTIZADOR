@@ -13,6 +13,7 @@ import {
   SafetyValidation
 } from '../types/stock';
 import { autonetService } from './autonetService';
+import { normalizeMileage } from '../utils/formatters';
 
 // Configure pdfjs worker if in browser
 if (typeof window !== 'undefined') {
@@ -22,6 +23,8 @@ if (typeof window !== 'undefined') {
     console.warn('pdfjs worker initialization error:', e);
   }
 }
+
+export { normalizeMileage };
 
 export interface ExtractedVehicleDraft {
   patente?: string;
@@ -87,30 +90,49 @@ export function generateVehicleKey(v: Partial<Vehicle>): string {
   return `fallback_${marca}_${modelo}_${anio}_${version}`;
 }
 
-const KNOWN_BRANDS: { match: RegExp; standard: string }[] = [
-  { match: /^(VOLKSWAGEN|VW)\b/i, standard: 'Volkswagen' },
-  { match: /^TOYOTA\b/i, standard: 'Toyota' },
-  { match: /^FORD\b/i, standard: 'Ford' },
-  { match: /^CHEVROLET\b/i, standard: 'Chevrolet' },
-  { match: /^FIAT\b/i, standard: 'Fiat' },
-  { match: /^RENAULT\b/i, standard: 'Renault' },
-  { match: /^PEUGEOT\b/i, standard: 'Peugeot' },
-  { match: /^JEEP\b/i, standard: 'Jeep' },
-  { match: /^NISSAN\b/i, standard: 'Nissan' },
-  { match: /^(CITROEN|CITROËN)\b/i, standard: 'Citroën' },
-  { match: /^HONDA\b/i, standard: 'Honda' },
-  { match: /^AUDI\b/i, standard: 'Audi' },
-  { match: /^BMW\b/i, standard: 'BMW' },
-  { match: /^MERCEDES([-\s]BENZ)?\b/i, standard: 'Mercedes-Benz' },
-  { match: /^RAM\b/i, standard: 'RAM' },
-  { match: /^CHERY\b/i, standard: 'Chery' },
-  { match: /^HYUNDAI\b/i, standard: 'Hyundai' },
-  { match: /^KIA\b/i, standard: 'Kia' },
-  { match: /^MITSUBISHI\b/i, standard: 'Mitsubishi' },
-  { match: /^DS\b/i, standard: 'DS' },
-  { match: /^BAIC\b/i, standard: 'BAIC' },
-  { match: /^SUBARU\b/i, standard: 'Subaru' },
-  { match: /^SUZUKI\b/i, standard: 'Suzuki' },
+export interface BrandDefinition {
+  regex: RegExp;
+  standard: string;
+}
+
+export const KNOWN_BRANDS: BrandDefinition[] = [
+  { regex: /\b(VOLKSWAGEN|VW)\b/i, standard: 'Volkswagen' },
+  { regex: /\bTOYOTA\b/i, standard: 'Toyota' },
+  { regex: /\bFORD\b/i, standard: 'Ford' },
+  { regex: /\b(CHEVROLET|CHEVY)\b/i, standard: 'Chevrolet' },
+  { regex: /\bFIAT\b/i, standard: 'Fiat' },
+  { regex: /\bRENAULT\b/i, standard: 'Renault' },
+  { regex: /\bPEUGEOT\b/i, standard: 'Peugeot' },
+  { regex: /\bJEEP\b/i, standard: 'Jeep' },
+  { regex: /\bNISSAN\b/i, standard: 'Nissan' },
+  { regex: /\b(CITROEN|CITROËN)\b/i, standard: 'Citroën' },
+  { regex: /\bHONDA\b/i, standard: 'Honda' },
+  { regex: /\bHYUNDAI\b/i, standard: 'Hyundai' },
+  { regex: /\bKIA\b/i, standard: 'Kia' },
+  { regex: /\bAUDI\b/i, standard: 'Audi' },
+  { regex: /\bBMW\b/i, standard: 'BMW' },
+  { regex: /\b(MERCEDES[-\s]?BENZ|MERCEDES)\b/i, standard: 'Mercedes-Benz' },
+  { regex: /\bRAM\b/i, standard: 'RAM' },
+  { regex: /\bCHERY\b/i, standard: 'Chery' },
+  { regex: /\bMITSUBISHI\b/i, standard: 'Mitsubishi' },
+  { regex: /\bDS\b/i, standard: 'DS' },
+  { regex: /\bBAIC\b/i, standard: 'BAIC' },
+  { regex: /\bHAVAL\b/i, standard: 'Haval' },
+  { regex: /\bGREAT\s+WALL\b/i, standard: 'Great Wall' },
+  { regex: /\bJAC\b/i, standard: 'JAC' },
+  { regex: /\bGEELY\b/i, standard: 'Geely' },
+  { regex: /\bBYD\b/i, standard: 'BYD' },
+  { regex: /\bDFSK\b/i, standard: 'DFSK' },
+  { regex: /\bLIFAN\b/i, standard: 'Lifan' },
+  { regex: /\bVOLVO\b/i, standard: 'Volvo' },
+  { regex: /\bMINI\b/i, standard: 'Mini' },
+  { regex: /\bALFA\s+ROMEO\b/i, standard: 'Alfa Romeo' },
+  { regex: /\bSEAT\b/i, standard: 'SEAT' },
+  { regex: /\bDODGE\b/i, standard: 'Dodge' },
+  { regex: /\bCHRYSLER\b/i, standard: 'Chrysler' },
+  { regex: /\bLEXUS\b/i, standard: 'Lexus' },
+  { regex: /\bISUZU\b/i, standard: 'Isuzu' },
+  { regex: /\bIVECO\b/i, standard: 'Iveco' },
 ];
 
 const KNOWN_MODELS = [
@@ -300,11 +322,11 @@ export class PdfService {
         continue;
       }
 
-      // 2. Si no empieza con número: verificar si empieza con Categoría conocida o Marca conocida
-      const startsWithBrand = KNOWN_BRANDS.some((b) => b.match.test(line));
-      const startsWithCat = /^(P\s*-\s*PA\s*0\s*KM|0\s*KM|P\s*-\s*A|P\s*-\s*T|AK|T|C|A|PA|TS|FLOTA)\b/i.test(line);
+      // 2. Si no empieza con número: verificar si contiene marca conocida o empieza con Categoría conocida
+      const containsBrand = KNOWN_BRANDS.some((b) => b.regex.test(line));
+      const startsWithCat = /^((P\s*-\s*)?(C|T|TS|PA|AK|A|FLOTA|0\s*KM)|-\s*(C|T|TS|PA|AK|A|FLOTA))\b/i.test(line);
 
-      if ((startsWithBrand || startsWithCat) && currentBuffer.length > 0 && this.hasPriceAndPlate(currentBuffer.join(' '))) {
+      if ((containsBrand || startsWithCat) && currentBuffer.length > 0 && this.hasPriceAndPlate(currentBuffer.join(' '))) {
         flushCurrent();
         currentBuffer = [line];
         continue;
@@ -442,11 +464,13 @@ export class PdfService {
       const midStart = yearPos !== -1 ? yearPos + yearStr.length : plateMatchIndex;
       const midText = trimmed.slice(midStart, priceMatchIndex).trim();
 
-      // Kilometraje: número con un punto de mil o entre 0 y 500.000
-      const kmMatch = midText.match(/\b(\d{1,3}(?:\.\d{3})|\d{1,6})\b/);
+      // Kilometraje: número normalizado con soporte para formatos argentinos ("129.000", "49.600", "4.800", "0")
+      const kmMatch = midText.match(/\b(\d{1,3}(?:\.\d{3})+|\d{1,6})\b/);
       if (kmMatch) {
-        const rawKm = kmMatch[1].replace(/\./g, '');
-        kilometraje = parseInt(rawKm, 10) || 0;
+        const parsedKm = normalizeMileage(kmMatch[1]);
+        if (parsedKm !== null) {
+          kilometraje = parsedKm;
+        }
       }
 
       // Color: palabra antes del KM
@@ -469,7 +493,7 @@ export class PdfService {
       }
     }
 
-    // 5. CABECERA (izquierda de la patente): Orden, Categoría, Marca, Modelo, Versión, Observaciones, Ubicacion, Tipo
+    // 5. CABECERA (izquierda de la patente): Orden, Categoría/Prefijo, Marca, Modelo, Versión, Observaciones, Ubicación, Tipo
     const headText = trimmed.slice(0, plateMatchIndex).trim();
 
     // Número de orden
@@ -481,16 +505,21 @@ export class PdfService {
       cleanHead = cleanHead.slice(orderMatch[0].length).trim();
     }
 
-    // Categoría / Condición de origen
-    let categoria = '';
-    const catRegex = /^(P\s*-\s*PA\s*0\s*KM|0\s*KM|P\s*-\s*A|P\s*-\s*T|AK|T|C|A|PA|TS|FLOTA)\b/i;
-    const catMatch = cleanHead.match(catRegex);
-    if (catMatch) {
-      categoria = catMatch[1].trim();
-      cleanHead = cleanHead.slice(catMatch[0].length).trim();
+    // Ubicación (Ub) y Tipo (1, 2, 3) que se encuentran hacia el final de cleanHead
+    let ub = 'Neuquén';
+    const ubTipoMatch = cleanHead.match(/\s+([A-Z0-9]{1,10})\s+([123])$/i);
+    if (ubTipoMatch) {
+      ub = ubTipoMatch[1].trim().toUpperCase();
+      cleanHead = cleanHead.slice(0, cleanHead.length - ubTipoMatch[0].length).trim();
+    } else {
+      const ubMatch = cleanHead.match(/\s+([PAS]|GR|SOLALIQUE|FINAN)$/i);
+      if (ubMatch) {
+        ub = ubMatch[1].trim().toUpperCase();
+        cleanHead = cleanHead.slice(0, cleanHead.length - ubMatch[0].length).trim();
+      }
     }
 
-    // Observaciones dentro de la línea (Sección 9)
+    // Observaciones dentro de la cabecera (Sección 9)
     let observaciones = '';
     const obsRegex = /(UNIDAD\s+CON\s+PRENDA\s+NO\s+VENDER|NO\s+VENDER\s+EN\s+TRAMITE\s+CON\s+DEMORA|NO\s+VENDER\s+UNIDAD\s+PRENDADA|CANCELACION\s+DE\s+PRENDA\s+EN\s+PROCE[SG]O|NO\s+VENDER|PRENDA|RESERVAD[OA]?|USADO\s+SELECCIONADO)/i;
     const obsMatch = cleanHead.match(obsRegex);
@@ -499,49 +528,81 @@ export class PdfService {
       cleanHead = cleanHead.replace(obsMatch[0], '').replace(/\s*-\s*/g, ' ').trim();
     }
 
-    // Ubicación (Ub) y Tipo (1, 2, 3) que se encuentran hacia el final de cleanHead
-    let ub = 'Neuquén';
-    const ubTipoMatch = cleanHead.match(/\s+([A-Z0-9]{1,4})\s+([123])$/i);
-    if (ubTipoMatch) {
-      ub = ubTipoMatch[1].trim().toUpperCase();
-      cleanHead = cleanHead.slice(0, cleanHead.length - ubTipoMatch[0].length).trim();
-    } else {
-      const ubMatch = cleanHead.match(/\s+([PAS]|GR|SOLALIQUE)$/i);
-      if (ubMatch) {
-        ub = ubMatch[1].trim().toUpperCase();
-        cleanHead = cleanHead.slice(0, cleanHead.length - ubMatch[0].length).trim();
-      }
-    }
-
-    // Marca
-    let marca = 'Autonet';
-    let modelPart = cleanHead;
+    // Detección robusta de Marca (evitando prefijos como "P - C", "- TS", "- PA", "AK", "P - T", etc.)
+    // Buscamos la marca en cualquier posición dentro de cleanHead
+    let bestBrandMatch: { brand: string; index: number; length: number; standard: string } | null = null;
+    let earliestBrandIndex = Infinity;
 
     for (const b of KNOWN_BRANDS) {
-      if (b.match.test(cleanHead)) {
-        marca = b.standard;
-        modelPart = cleanHead.replace(b.match, '').trim();
-        break;
+      const m = cleanHead.match(b.regex);
+      if (m && m.index !== undefined && m.index < earliestBrandIndex) {
+        earliestBrandIndex = m.index;
+        bestBrandMatch = {
+          brand: m[0],
+          index: m.index,
+          length: m[0].length,
+          standard: b.standard,
+        };
       }
     }
 
-    // Modelo y Versión
+    if (!bestBrandMatch) {
+      return {
+        vehicle: null,
+        discardedReason: `No se detectó una marca automotriz válida en cabecera: "${cleanHead.slice(0, 45)}...". "Autonet" no es marca de vehículo.`
+      };
+    }
+
+    const marca = bestBrandMatch.standard;
+    const prefixPart = cleanHead.slice(0, bestBrandMatch.index).trim();
+    const afterBrandPart = cleanHead.slice(bestBrandMatch.index + bestBrandMatch.length).trim();
+
+    // Categoría / Condición de origen extraída de los prefijos previos a la marca (ej: "P - C", "- TS", "PA", "T")
+    let categoria = prefixPart.replace(/^[-_\s]+|[-_\s]+$/g, '').trim();
+
+    // Modelo y Versión extraídos a partir de lo que sigue a la marca
     let modelo = '';
-    let version = modelPart;
+    let version = afterBrandPart;
 
     for (const km of KNOWN_MODELS) {
       const kmRegex = new RegExp(`^${km}\\b`, 'i');
-      if (kmRegex.test(modelPart)) {
+      if (kmRegex.test(afterBrandPart)) {
         modelo = km;
-        version = modelPart.slice(km.length).trim();
+        version = afterBrandPart.slice(km.length).trim();
         break;
       }
     }
 
     if (!modelo) {
-      const parts = modelPart.split(' ');
-      modelo = parts[0] || 'Modelo';
+      const parts = afterBrandPart.split(/\s+/);
+      modelo = parts[0] || '';
       version = parts.slice(1).join(' ') || '';
+    }
+
+    // Normalizar modelo y versión
+    modelo = modelo.replace(/^[-_\s]+|[-_\s]+$/g, '').trim();
+    version = version.replace(/^[-_\s]+|[-_\s]+$/g, '').trim();
+    if (!version) version = 'Estándar';
+
+    // VALIDACIÓN ESTRICTA DE CALIDAD DEL REGISTRO (Sección 7 y 9)
+    if (!marca || marca.toLowerCase() === 'autonet') {
+      return { vehicle: null, discardedReason: `Marca inválida o sospechosa ("${marca}") en: "${trimmed.slice(0, 40)}..."` };
+    }
+    if (!modelo || modelo === 'P' || modelo.startsWith('-')) {
+      return { vehicle: null, discardedReason: `Modelo desplazado o inválido ("${modelo}") en: "${trimmed.slice(0, 40)}..."` };
+    }
+    const cleanPlate = normalizePlate(patente);
+    if (!cleanPlate || cleanPlate.length < 5) {
+      return { vehicle: null, discardedReason: `Patente inválida o ausente ("${patente}") en: "${trimmed.slice(0, 40)}..."` };
+    }
+    if (!anio || anio < 1990 || anio > 2030) {
+      return { vehicle: null, discardedReason: `Año fuera de rango (${anio}) en: "${trimmed.slice(0, 40)}..."` };
+    }
+    if (!precio || precio <= 0 || isNaN(precio)) {
+      return { vehicle: null, discardedReason: `Precio inválido ($ ${precio}) en: "${trimmed.slice(0, 40)}..."` };
+    }
+    if (kilometraje === null || isNaN(kilometraje) || kilometraje < 0) {
+      return { vehicle: null, discardedReason: `Kilometraje inválido (${kilometraje}) en: "${trimmed.slice(0, 40)}..."` };
     }
 
     // Combustible
@@ -551,22 +612,22 @@ export class PdfService {
       /AMAROK/i.test(modelo) ||
       /HILUX/i.test(modelo) ||
       /S 10/i.test(modelo) ||
-      /RANGER.*2\.2/i.test(modelPart)
+      /RANGER.*2\.2/i.test(afterBrandPart)
     ) {
       combustible = 'Diésel';
-    } else if (/\b(HIBRID|HYBRID|HYBRIDA|E TECH)\b/i.test(version + ' ' + modelPart)) {
+    } else if (/\b(HIBRID|HYBRID|HYBRIDA|E TECH)\b/i.test(version + ' ' + afterBrandPart)) {
       combustible = 'Híbrido';
     }
 
     // Transmisión
     let caja: VehicleTransmission = 'Manual';
-    if (/\b(AT|CVT|AUTOMATICA|TIPTRONIC|CVT\s*PRO)\b/i.test(version + ' ' + modelPart)) {
+    if (/\b(AT|CVT|AUTOMATICA|TIPTRONIC|CVT\s*PRO)\b/i.test(version + ' ' + afterBrandPart)) {
       caja = 'Automática';
     }
 
     // Tracción
     let traccion: VehicleTraction = '4x2';
-    if (/\b(4X4|4WD|AWD)\b/i.test(version + ' ' + modelPart)) {
+    if (/\b(4X4|4WD|AWD)\b/i.test(version + ' ' + afterBrandPart)) {
       traccion = '4x4';
     }
 
@@ -887,13 +948,45 @@ export class PdfService {
           });
         }
 
-        // Kilometraje
-        if (incoming.kilometraje !== undefined && incoming.kilometraje !== existing.kilometraje) {
+        // Kilometraje (con normalización numérica estricta)
+        const incKm = normalizeMileage(incoming.kilometraje) ?? 0;
+        const existKm = normalizeMileage(existing.kilometraje) ?? 0;
+        if (incoming.kilometraje !== undefined && incKm !== existKm) {
           changes.push({
             campo: 'kilometraje',
             etiqueta: 'Kilometraje',
-            valorAnterior: existing.kilometraje,
-            valorNuevo: incoming.kilometraje,
+            valorAnterior: existKm,
+            valorNuevo: incKm,
+          });
+        }
+
+        // Marca (corrige registros previos con "Autonet")
+        if (incoming.marca && (incoming.marca !== existing.marca || existing.marca.toLowerCase() === 'autonet')) {
+          changes.push({
+            campo: 'marca',
+            etiqueta: 'Marca',
+            valorAnterior: existing.marca,
+            valorNuevo: incoming.marca,
+          });
+        }
+
+        // Modelo (corrige registros previos con "P" o prefijos desplazados)
+        if (incoming.modelo && (incoming.modelo !== existing.modelo || existing.modelo === 'P' || existing.modelo.startsWith('-'))) {
+          changes.push({
+            campo: 'modelo',
+            etiqueta: 'Modelo',
+            valorAnterior: existing.modelo,
+            valorNuevo: incoming.modelo,
+          });
+        }
+
+        // Versión (corrige prefijos residuales)
+        if (incoming.version && (incoming.version !== existing.version || existing.version.startsWith('-'))) {
+          changes.push({
+            campo: 'version',
+            etiqueta: 'Versión',
+            valorAnterior: existing.version,
+            valorNuevo: incoming.version,
           });
         }
 

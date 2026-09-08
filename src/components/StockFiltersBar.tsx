@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { StockFilters, Vehicle } from '../types/stock';
 import { getSituacionOperativaInfo } from '../utils/autonetHelpers';
+import { normalizeMileage } from '../utils/formatters';
 
 interface StockFiltersBarProps {
   filters: StockFilters;
@@ -339,18 +340,36 @@ export const StockFiltersBar: React.FC<StockFiltersBarProps> = ({
             <div className="grid grid-cols-2 gap-2">
               <input
                 id="filter-km-min"
-                type="number"
+                type="text"
+                inputMode="numeric"
                 placeholder="Desde km"
-                value={filters.kmMin}
-                onChange={(e) => updateFilter('kmMin', e.target.value ? Number(e.target.value) : '')}
+                value={filters.kmMin !== '' ? filters.kmMin : ''}
+                onChange={(e) => {
+                  const val = e.target.value.trim();
+                  if (!val) {
+                    updateFilter('kmMin', '');
+                  } else {
+                    const norm = normalizeMileage(val);
+                    updateFilter('kmMin', norm !== null ? norm : '');
+                  }
+                }}
                 className="w-full bg-slate-50 text-slate-800 text-sm rounded-lg border border-slate-200 px-2.5 py-2 outline-none focus:border-blue-500 focus:bg-white"
               />
               <input
                 id="filter-km-max"
-                type="number"
-                placeholder="Hasta ej. 50000"
-                value={filters.kmMax}
-                onChange={(e) => updateFilter('kmMax', e.target.value ? Number(e.target.value) : '')}
+                type="text"
+                inputMode="numeric"
+                placeholder="Hasta ej. 50.000"
+                value={filters.kmMax !== '' ? filters.kmMax : ''}
+                onChange={(e) => {
+                  const val = e.target.value.trim();
+                  if (!val) {
+                    updateFilter('kmMax', '');
+                  } else {
+                    const norm = normalizeMileage(val);
+                    updateFilter('kmMax', norm !== null ? norm : '');
+                  }
+                }}
                 className="w-full bg-slate-50 text-slate-800 text-sm rounded-lg border border-slate-200 px-2.5 py-2 outline-none focus:border-blue-500 focus:bg-white"
               />
             </div>

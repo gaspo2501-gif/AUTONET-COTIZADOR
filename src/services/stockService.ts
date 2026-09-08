@@ -1,7 +1,8 @@
 import { INITIAL_STOCK } from '../data/initialStock';
 import { DiffResult, UpdateHistoryRecord, Vehicle, VehicleStatus } from '../types/stock';
 import { autonetService, AutonetSyncResult } from './autonetService';
-import { normalizePlate } from './pdfService';
+import { normalizePlate, KNOWN_BRANDS } from './pdfService';
+import { normalizeMileage } from '../utils/formatters';
 
 const STOCK_STORAGE_KEY = 'autonet_stock_v2_real';
 const HISTORY_STORAGE_KEY = 'autonet_history_v2_real';
@@ -63,6 +64,63 @@ class StockService {
           };
         });
         this.saveStock(merged);
+      }
+
+      // Saneamiento y corrección de datos existentes:
+      // 1. Normalizar kilometraje a número entero en todos los registros
+      // 2. Corregir registros que hayan quedado con marca "Autonet" o modelo "P"
+      const currentList = this.getAllVehicles();
+      let hasSanitizationFix = false;
+      const sanitized = currentList.map((v) => {
+        let modified = false;
+        const normKm = normalizeMileage(v.kilometraje) ?? 0;
+        let km = v.kilometraje;
+        if (v.kilometraje !== normKm) {
+          km = normKm;
+          modified = true;
+        }
+
+        let marca = v.marca;
+        let modelo = v.modelo;
+        let version = v.version;
+
+        if (
+          marca.toLowerCase() === 'autonet' ||
+          modelo === 'P' ||
+          modelo.startsWith('-') ||
+          version.startsWith('-')
+        ) {
+          // Extraer la marca automotriz real de modelo + version
+          const combined = `${modelo} ${version}`.trim();
+          for (const b of KNOWN_BRANDS) {
+            const m = combined.match(b.regex);
+            if (m && m.index !== undefined) {
+              marca = b.standard;
+              const after = combined.slice(m.index + m[0].length).trim();
+              const parts = after.split(/\s+/);
+              modelo = (parts[0] || 'Modelo').replace(/^[-_\s]+/, '').trim();
+              version = (parts.slice(1).join(' ') || 'Estándar').replace(/^[-_\s]+/, '').trim();
+              modified = true;
+              break;
+            }
+          }
+        }
+
+        if (modified) {
+          hasSanitizationFix = true;
+          return {
+            ...v,
+            kilometraje: km,
+            marca,
+            modelo,
+            version,
+          };
+        }
+        return v;
+      });
+
+      if (hasSanitizationFix) {
+        this.saveStock(sanitized);
       }
     } catch {
       this.saveStock(INITIAL_STOCK);
@@ -195,7 +253,7 @@ class StockService {
           version: item.vehiculoNuevo.version || '',
           anio: item.vehiculoNuevo.anio || new Date().getFullYear(),
           color: item.vehiculoNuevo.color || 'A confirmar',
-          kilometraje: item.vehiculoNuevo.kilometraje || 0,
+          kilometraje: normalizeMileage(item.vehiculoNuevo.kilometraje) ?? 0,
           precio: item.vehiculoNuevo.precio || 0,
           moneda: item.vehiculoNuevo.moneda || 'ARS',
           patente: item.vehiculoNuevo.patente || item.patente,
@@ -238,7 +296,11 @@ class StockService {
               // Proteger estado vendido manual
               return;
             }
-            (newProps as any)[c.campo] = c.valorNuevo;
+            if (c.campo === 'kilometraje') {
+              (newProps as any)[c.campo] = normalizeMileage(c.valorNuevo) ?? 0;
+            } else {
+              (newProps as any)[c.campo] = c.valorNuevo;
+            }
           });
         }
 
