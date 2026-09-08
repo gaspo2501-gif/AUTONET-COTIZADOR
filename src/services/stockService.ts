@@ -3,6 +3,7 @@ import { DiffResult, UpdateHistoryRecord, Vehicle, VehicleStatus } from '../type
 import { autonetService, AutonetSyncResult } from './autonetService';
 import { normalizePlate, KNOWN_BRANDS } from './pdfService';
 import { normalizeMileage } from '../utils/formatters';
+import { getSituacionOperativaInfo } from '../utils/autonetHelpers';
 
 const STOCK_STORAGE_KEY = 'autonet_stock_v2_real';
 const HISTORY_STORAGE_KEY = 'autonet_history_v2_real';
@@ -11,6 +12,7 @@ type StockListener = (vehicles: Vehicle[]) => void;
 
 class StockService {
   private listeners: StockListener[] = [];
+  private memoryStock: Vehicle[] | null = null;
 
   constructor() {
     this.ensureInitialized();
@@ -140,23 +142,33 @@ class StockService {
   }
 
   private saveStock(vehicles: Vehicle[]): void {
-    if (typeof window === 'undefined') return;
-    localStorage.setItem(STOCK_STORAGE_KEY, JSON.stringify(vehicles));
+    this.memoryStock = vehicles;
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(STOCK_STORAGE_KEY, JSON.stringify(vehicles));
+      } catch (e) {
+        console.error('Error writing stock to localStorage:', e);
+      }
+    }
     this.notify();
   }
 
   public getAllVehicles(): Vehicle[] {
-    if (typeof window === 'undefined') return INITIAL_STOCK;
+    if (typeof window === 'undefined') {
+      return this.memoryStock || INITIAL_STOCK;
+    }
     try {
       const data = localStorage.getItem(STOCK_STORAGE_KEY);
       if (!data) {
         this.saveStock(INITIAL_STOCK);
         return INITIAL_STOCK;
       }
-      return JSON.parse(data) as Vehicle[];
+      const parsed = JSON.parse(data) as Vehicle[];
+      this.memoryStock = parsed;
+      return parsed;
     } catch (e) {
       console.error('Error reading stock from storage:', e);
-      return INITIAL_STOCK;
+      return this.memoryStock || INITIAL_STOCK;
     }
   }
 
@@ -284,8 +296,32 @@ class StockService {
           nextEstado = 'Vendido';
         }
 
-        // Aplicar campos modificados
+        // Actualizar todos los datos fuente extraídos del PDF nuevo
+        const sourceUpdates: Partial<Vehicle> = {};
+        if (item.vehiculoNuevo) {
+          if (item.vehiculoNuevo.marca) sourceUpdates.marca = item.vehiculoNuevo.marca;
+          if (item.vehiculoNuevo.modelo) sourceUpdates.modelo = item.vehiculoNuevo.modelo;
+          if (item.vehiculoNuevo.version) sourceUpdates.version = item.vehiculoNuevo.version;
+          if (item.vehiculoNuevo.anio) sourceUpdates.anio = item.vehiculoNuevo.anio;
+          if (item.vehiculoNuevo.color) sourceUpdates.color = item.vehiculoNuevo.color;
+          if (item.vehiculoNuevo.kilometraje !== undefined) {
+            sourceUpdates.kilometraje = normalizeMileage(item.vehiculoNuevo.kilometraje) ?? 0;
+          }
+          if (item.vehiculoNuevo.precio) sourceUpdates.precio = item.vehiculoNuevo.precio;
+          if (item.vehiculoNuevo.empresa) sourceUpdates.empresa = item.vehiculoNuevo.empresa;
+          if (item.vehiculoNuevo.ubCode) {
+            sourceUpdates.ubCode = item.vehiculoNuevo.ubCode;
+            sourceUpdates.ubicacion = item.vehiculoNuevo.ubCode;
+            sourceUpdates.ubLabel = item.vehiculoNuevo.ubLabel || getSituacionOperativaInfo(item.vehiculoNuevo.ubCode).shortLabel;
+          }
+          if (item.vehiculoNuevo.tipoVehiculo) sourceUpdates.tipoVehiculo = item.vehiculoNuevo.tipoVehiculo;
+          if (item.vehiculoNuevo.categoriaOrigen) sourceUpdates.categoriaOrigen = item.vehiculoNuevo.categoriaOrigen;
+          if (item.vehiculoNuevo.fechaToma) sourceUpdates.fechaToma = item.vehiculoNuevo.fechaToma;
+        }
+
+        // Aplicar campos modificados específicos
         const newProps: Partial<Vehicle> = {
+          ...sourceUpdates,
           fechaActualizacion: nowIso,
           estado: nextEstado,
         };

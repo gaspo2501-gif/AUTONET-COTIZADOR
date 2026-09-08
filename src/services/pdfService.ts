@@ -14,6 +14,7 @@ import {
 } from '../types/stock';
 import { autonetService } from './autonetService';
 import { normalizeMileage } from '../utils/formatters';
+import { getSituacionOperativaInfo } from '../utils/autonetHelpers';
 
 // Configure pdfjs worker if in browser
 if (typeof window !== 'undefined') {
@@ -505,18 +506,28 @@ export class PdfService {
       cleanHead = cleanHead.slice(orderMatch[0].length).trim();
     }
 
-    // Ubicación (Ub) y Tipo (1, 2, 3) que se encuentran hacia el final de cleanHead
-    let ub = 'Neuquén';
+    // Ubicación (Ub) y Tipo (1, 2, 3) que se encuentran hacia el final de cleanHead (inmediatamente antes de la patente)
+    let rawUb = 'A';
+    let tipoVehiculo: string | undefined;
     const ubTipoMatch = cleanHead.match(/\s+([A-Z0-9]{1,10})\s+([123])$/i);
     if (ubTipoMatch) {
-      ub = ubTipoMatch[1].trim().toUpperCase();
+      rawUb = ubTipoMatch[1].trim().toUpperCase();
+      tipoVehiculo = ubTipoMatch[2].trim();
       cleanHead = cleanHead.slice(0, cleanHead.length - ubTipoMatch[0].length).trim();
     } else {
       const ubMatch = cleanHead.match(/\s+([PAS]|GR|SOLALIQUE|FINAN)$/i);
       if (ubMatch) {
-        ub = ubMatch[1].trim().toUpperCase();
+        rawUb = ubMatch[1].trim().toUpperCase();
         cleanHead = cleanHead.slice(0, cleanHead.length - ubMatch[0].length).trim();
       }
+    }
+
+    // Detección de columna desplazada / cabecera inválida (Sección 9)
+    if (/^(Autonet\s+P|Pendiente|Solalique)\b/i.test(cleanHead)) {
+      return {
+        vehicle: null,
+        discardedReason: `Error de parseo: cabecera inválida por desplazamiento de columnas ("${cleanHead.slice(0, 40)}...")`,
+      };
     }
 
     // Observaciones dentro de la cabecera (Sección 9)
@@ -641,15 +652,9 @@ export class PdfService {
     if (observaciones) obsList.push(`Observación: ${observaciones}`);
     if (categoria) obsList.push(`Origen: ${categoria}`);
     if (empresa) obsList.push(`Concesionario: ${empresa}`);
-    if (ub && ub !== 'Neuquén') {
-      const ubicacionNombre = 
-        ub === 'A' ? 'Allen / Sucursal A' : 
-        ub === 'P' ? 'Plottier' : 
-        ub === 'S' ? 'Neuquén Salón' : 
-        ub === 'GR' ? 'General Roca' : ub;
-      obsList.push(`Ubicación: ${ubicacionNombre}`);
-    }
     if (fechaToma && fechaToma !== '-') obsList.push(`Fecha toma: ${fechaToma}`);
+
+    const ubLabel = getSituacionOperativaInfo(rawUb).shortLabel;
 
     const vehicle: Partial<Vehicle> = {
       id: `AUT-${String(numOrden).padStart(3, '0')}`,
@@ -668,7 +673,10 @@ export class PdfService {
       traccion,
       estado,
       observaciones: obsList.join(' | '),
-      ubicacion: ub,
+      ubicacion: rawUb,
+      ubCode: rawUb,
+      ubLabel: ubLabel,
+      tipoVehiculo,
       empresa,
       fechaToma,
       categoriaOrigen: categoria,
@@ -916,6 +924,7 @@ export class PdfService {
     let modificadosCount = 0;
     let sinCambiosCount = 0;
     let cambiosPrecioCount = 0;
+    let corregidosCount = 0;
 
     // 1. Analizar los vehículos entrantes
     extractedList.forEach((incoming) => {
@@ -1000,6 +1009,37 @@ export class PdfService {
           });
         }
 
+        // Ubicación / Situación operativa (Ub)
+        if (incoming.ubCode && incoming.ubCode !== (existing.ubCode || existing.ubicacion)) {
+          changes.push({
+            campo: 'ubCode',
+            etiqueta: 'Ubicación (Ub)',
+            valorAnterior: existing.ubCode || existing.ubicacion,
+            valorNuevo: incoming.ubCode,
+          });
+        }
+
+        // Empresa / Sociedad comercial
+        if (incoming.empresa && incoming.empresa !== existing.empresa) {
+          changes.push({
+            campo: 'empresa',
+            etiqueta: 'Empresa',
+            valorAnterior: existing.empresa,
+            valorNuevo: incoming.empresa,
+          });
+        }
+
+        // Detección de registro previo corregido
+        const isCorregido = changes.some(
+          (c) =>
+            (c.campo === 'marca' && String(c.valorAnterior).toLowerCase() === 'autonet') ||
+            (c.campo === 'modelo' && (c.valorAnterior === 'P' || String(c.valorAnterior).startsWith('-'))) ||
+            (c.campo === 'version' && String(c.valorAnterior).startsWith('-'))
+        );
+        if (isCorregido) {
+          corregidosCount++;
+        }
+
         // Estado (Verificar protección de "Vendido" manual)
         let advertenciaEstado: string | undefined;
         if (existing.estado === 'Vendido' && existing.estadoModificadoManualmente) {
@@ -1010,9 +1050,10 @@ export class PdfService {
           modificadosCount++;
           diffItems.push({
             patente: existing.patente,
-            marcaModelo: `${existing.marca} ${existing.modelo} ${existing.version}`,
+            marcaModelo: `${incoming.marca || existing.marca} ${incoming.modelo || existing.modelo} ${incoming.version || existing.version}`,
             tipo: 'modificado',
             cambios: changes,
+            vehiculoNuevo: incoming,
             vehiculoExistente: existing,
             advertenciaEstado,
           });
@@ -1088,6 +1129,10 @@ export class PdfService {
       ratio,
     };
 
+    if (diagnostics) {
+      diagnostics.corregidosCount = corregidosCount;
+    }
+
     return {
       archivoNombre: fileName,
       totalEncontrados: extractedCount,
@@ -1096,6 +1141,7 @@ export class PdfService {
       sinCambios: sinCambiosCount,
       noAparecen: noAparecenCount,
       cambiosPrecio: cambiosPrecioCount,
+      corregidos: corregidosCount,
       items: diffItems,
       timestamp: new Date().toISOString(),
       diagnostics,

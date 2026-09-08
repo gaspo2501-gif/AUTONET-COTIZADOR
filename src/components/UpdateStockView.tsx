@@ -294,7 +294,7 @@ export const UpdateStockView: React.FC<UpdateStockViewProps> = ({
                 </span>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mt-3">
+              <div className={`grid grid-cols-2 ${diffResult.diagnostics.corregidosCount ? 'sm:grid-cols-3 lg:grid-cols-6' : 'sm:grid-cols-5'} gap-3 mt-3`}>
                 <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100">
                   <span className="text-[10px] uppercase font-bold text-slate-500 block">Páginas leídas</span>
                   <span className="text-base font-black text-slate-800 font-mono">
@@ -319,6 +319,14 @@ export const UpdateStockView: React.FC<UpdateStockViewProps> = ({
                     {diffResult.diagnostics.validRecords}
                   </span>
                 </div>
+                {diffResult.diagnostics.corregidosCount !== undefined && diffResult.diagnostics.corregidosCount > 0 && (
+                  <div className="bg-teal-50 p-2.5 rounded-lg border border-teal-200">
+                    <span className="text-[10px] uppercase font-bold text-teal-800 block">Corregidos</span>
+                    <span className="text-base font-black text-teal-800 font-mono">
+                      {diffResult.diagnostics.corregidosCount}
+                    </span>
+                  </div>
+                )}
                 <div className={`p-2.5 rounded-lg border ${
                   diffResult.diagnostics.discardedRecords > 0 
                     ? 'bg-amber-50 border-amber-200' 

@@ -169,6 +169,18 @@ export default function App() {
       // Tracción
       if (filters.traccion && v.traccion !== filters.traccion) return false;
 
+      // Situación operativa / Ubicación (Ub: P, S, A, GR, FINAN)
+      if (filters.ubicacion) {
+        const vUb = (v.ubCode || v.ubicacion || '').trim().toUpperCase();
+        if (vUb !== filters.ubicacion.trim().toUpperCase()) return false;
+      }
+
+      // Empresa / Concesionario
+      if (filters.empresa) {
+        const vEmp = (v.empresa || '').trim().toUpperCase();
+        if (vEmp !== filters.empresa.trim().toUpperCase()) return false;
+      }
+
       // Estado
       if (filters.estado !== 'Todos') {
         if (v.estado !== filters.estado) return false;

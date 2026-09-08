@@ -35,6 +35,8 @@ export interface Vehicle {
   // Metadatos extraídos de la lista oficial Autonet
   numeroOrden?: number;
   ubicacion?: string; // Situación operativa / localización en stock (Ub)
+  ubCode?: string; // Código crudo de Ub (A, P, S, GR, FINAN)
+  ubLabel?: string; // Etiqueta descriptiva (Autonet, Pendiente, Solalique, etc.)
   tipoVehiculo?: string;
   empresa?: string; // Procedencia / sociedad comercial (MIRAGE, IRUÑA, etc.)
   fechaToma?: string;
@@ -76,6 +78,7 @@ export interface ParsingDiagnostics {
   recordsReconstructed: number;
   validRecords: number;
   discardedRecords: number;
+  corregidosCount?: number;
   discardedDetails: DiscardedRecordDetail[];
 }
 
@@ -94,6 +97,7 @@ export interface DiffResult {
   sinCambios: number;
   noAparecen: number;
   cambiosPrecio: number;
+  corregidos?: number;
   enriquecidosWeb?: number;
   soloPdf?: number;
   items: VehicleDiffItem[];
