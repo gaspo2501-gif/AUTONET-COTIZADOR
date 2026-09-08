@@ -1,7 +1,15 @@
 import { INITIAL_STOCK } from '../data/initialStock';
 import { DiffResult, UpdateHistoryRecord, Vehicle, VehicleStatus } from '../types/stock';
 import { autonetService, AutonetSyncResult } from './autonetService';
-import { normalizePlate, isValidPlate, isCorruptStoredVehicle, KNOWN_BRANDS } from './pdfService';
+import {
+  normalizePlate,
+  isValidPlate,
+  isCorruptStoredVehicle,
+  KNOWN_BRANDS,
+  cleanVersion,
+  parseVehicleDescription,
+  BANNED_VERSION_PREFIX_REGEX,
+} from './pdfService';
 import { normalizeMileage } from '../utils/formatters';
 import { getSituacionOperativaInfo } from '../utils/autonetHelpers';
 
@@ -99,25 +107,28 @@ class StockService {
         let modelo = v.modelo;
         let version = v.version;
 
+        // Limpiar version si contiene prefijos internos (T, C, A, TS, PA, AK, P - C, 0 KM, FLOTA, etc.)
+        const cleanedVer = cleanVersion(version);
+        if (cleanedVer !== version) {
+          version = cleanedVer;
+          modified = true;
+        }
+
+        // Si la marca era Autonet, modelo 'P', o la descripción tenía prefijos internos desplazados, re-parsear
         if (
           marca.toLowerCase() === 'autonet' ||
           modelo === 'P' ||
           modelo.startsWith('-') ||
-          version.startsWith('-')
+          version.startsWith('-') ||
+          BANNED_VERSION_PREFIX_REGEX.test(v.version)
         ) {
-          // Extraer la marca automotriz real de modelo + version
-          const combined = `${modelo} ${version}`.trim();
-          for (const b of KNOWN_BRANDS) {
-            const m = combined.match(b.regex);
-            if (m && m.index !== undefined) {
-              marca = b.standard;
-              const after = combined.slice(m.index + m[0].length).trim();
-              const parts = after.split(/\s+/);
-              modelo = (parts[0] || 'Modelo').replace(/^[-_\s]+/, '').trim();
-              version = (parts.slice(1).join(' ') || 'Estándar').replace(/^[-_\s]+/, '').trim();
-              modified = true;
-              break;
-            }
+          const combined = `${marca.toLowerCase() === 'autonet' ? '' : marca} ${modelo} ${version}`.trim();
+          const parsed = parseVehicleDescription(combined);
+          if (parsed.marca !== 'DESCONOCIDA') {
+            marca = parsed.marca;
+            modelo = parsed.modelo;
+            version = parsed.version;
+            modified = true;
           }
         }
 
@@ -285,7 +296,7 @@ class StockService {
           id: item.vehiculoNuevo.id || `AUT-${Math.floor(100 + Math.random() * 900)}`,
           marca: item.vehiculoNuevo.marca || 'Sin Marca',
           modelo: item.vehiculoNuevo.modelo || 'Sin Modelo',
-          version: item.vehiculoNuevo.version || '',
+          version: cleanVersion(item.vehiculoNuevo.version || ''),
           anio: item.vehiculoNuevo.anio || new Date().getFullYear(),
           color: item.vehiculoNuevo.color || 'A confirmar',
           kilometraje: normalizeMileage(item.vehiculoNuevo.kilometraje) ?? 0,
@@ -324,7 +335,7 @@ class StockService {
         if (item.vehiculoNuevo) {
           if (item.vehiculoNuevo.marca) sourceUpdates.marca = item.vehiculoNuevo.marca;
           if (item.vehiculoNuevo.modelo) sourceUpdates.modelo = item.vehiculoNuevo.modelo;
-          if (item.vehiculoNuevo.version) sourceUpdates.version = item.vehiculoNuevo.version;
+          if (item.vehiculoNuevo.version) sourceUpdates.version = cleanVersion(item.vehiculoNuevo.version);
           if (item.vehiculoNuevo.anio) sourceUpdates.anio = item.vehiculoNuevo.anio;
           if (item.vehiculoNuevo.color) sourceUpdates.color = item.vehiculoNuevo.color;
           if (item.vehiculoNuevo.kilometraje !== undefined) {

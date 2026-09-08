@@ -229,60 +229,341 @@ export interface BrandDefinition {
   standard: string;
 }
 
-export const KNOWN_BRANDS: BrandDefinition[] = [
-  { regex: /\b(VOLKSWAGEN|VW)\b/i, standard: 'Volkswagen' },
-  { regex: /\bTOYOTA\b/i, standard: 'Toyota' },
-  { regex: /\bFORD\b/i, standard: 'Ford' },
-  { regex: /\b(CHEVROLET|CHEVY)\b/i, standard: 'Chevrolet' },
-  { regex: /\bFIAT\b/i, standard: 'Fiat' },
-  { regex: /\bRENAULT\b/i, standard: 'Renault' },
-  { regex: /\bPEUGEOT\b/i, standard: 'Peugeot' },
-  { regex: /\bJEEP\b/i, standard: 'Jeep' },
-  { regex: /\bNISSAN\b/i, standard: 'Nissan' },
-  { regex: /\b(CITROEN|CITROËN)\b/i, standard: 'Citroën' },
-  { regex: /\bHONDA\b/i, standard: 'Honda' },
-  { regex: /\bHYUNDAI\b/i, standard: 'Hyundai' },
-  { regex: /\bKIA\b/i, standard: 'Kia' },
-  { regex: /\bAUDI\b/i, standard: 'Audi' },
-  { regex: /\bBMW\b/i, standard: 'BMW' },
-  { regex: /\b(MERCEDES[-\s]?BENZ|MERCEDES)\b/i, standard: 'Mercedes-Benz' },
-  { regex: /\bRAM\b/i, standard: 'RAM' },
-  { regex: /\bCHERY\b/i, standard: 'Chery' },
-  { regex: /\bMITSUBISHI\b/i, standard: 'Mitsubishi' },
-  { regex: /\bDS\b/i, standard: 'DS' },
-  { regex: /\bBAIC\b/i, standard: 'BAIC' },
-  { regex: /\bHAVAL\b/i, standard: 'Haval' },
-  { regex: /\bGREAT\s+WALL\b/i, standard: 'Great Wall' },
-  { regex: /\bJAC\b/i, standard: 'JAC' },
-  { regex: /\bGEELY\b/i, standard: 'Geely' },
-  { regex: /\bBYD\b/i, standard: 'BYD' },
-  { regex: /\bDFSK\b/i, standard: 'DFSK' },
-  { regex: /\bLIFAN\b/i, standard: 'Lifan' },
-  { regex: /\bVOLVO\b/i, standard: 'Volvo' },
-  { regex: /\bMINI\b/i, standard: 'Mini' },
-  { regex: /\bALFA\s+ROMEO\b/i, standard: 'Alfa Romeo' },
-  { regex: /\bSEAT\b/i, standard: 'SEAT' },
-  { regex: /\bDODGE\b/i, standard: 'Dodge' },
-  { regex: /\bCHRYSLER\b/i, standard: 'Chrysler' },
-  { regex: /\bLEXUS\b/i, standard: 'Lexus' },
-  { regex: /\bISUZU\b/i, standard: 'Isuzu' },
-  { regex: /\bIVECO\b/i, standard: 'Iveco' },
+/**
+ * Lista controlada de marcas automotrices según requerimiento oficial (Sección 4).
+ * La marca se normaliza en mayúsculas estándar.
+ */
+export const CONTROLLED_BRANDS: { code: string; regex: RegExp; standard: string }[] = [
+  { code: 'CHEVROLET', regex: /\b(CHEVROLET|CHEVY)\b/i, standard: 'CHEVROLET' },
+  { code: 'CITROEN', regex: /\b(CITROEN|CITROËN)\b/i, standard: 'CITROEN' },
+  { code: 'VW', regex: /\b(VOLKSWAGEN|VW)\b/i, standard: 'VW' },
+  { code: 'TOYOTA', regex: /\bTOYOTA\b/i, standard: 'TOYOTA' },
+  { code: 'FORD', regex: /\bFORD\b/i, standard: 'FORD' },
+  { code: 'FIAT', regex: /\bFIAT\b/i, standard: 'FIAT' },
+  { code: 'RENAULT', regex: /\bRENAULT\b/i, standard: 'RENAULT' },
+  { code: 'PEUGEOT', regex: /\bPEUGEOT\b/i, standard: 'PEUGEOT' },
+  { code: 'JEEP', regex: /\bJEEP\b/i, standard: 'JEEP' },
+  { code: 'NISSAN', regex: /\bNISSAN\b/i, standard: 'NISSAN' },
+  { code: 'HONDA', regex: /\bHONDA\b/i, standard: 'HONDA' },
+  { code: 'HYUNDAI', regex: /\bHYUNDAI\b/i, standard: 'HYUNDAI' },
+  { code: 'KIA', regex: /\bKIA\b/i, standard: 'KIA' },
+  { code: 'CHERY', regex: /\bCHERY\b/i, standard: 'CHERY' },
+  { code: 'AUDI', regex: /\bAUDI\b/i, standard: 'AUDI' },
+  { code: 'BMW', regex: /\bBMW\b/i, standard: 'BMW' },
+  { code: 'MERCEDES-BENZ', regex: /\b(MERCEDES[-\s]?BENZ|MERCEDES)\b/i, standard: 'MERCEDES-BENZ' },
+  { code: 'RAM', regex: /\bRAM\b/i, standard: 'RAM' },
+  { code: 'MITSUBISHI', regex: /\bMITSUBISHI\b/i, standard: 'MITSUBISHI' },
+  { code: 'DS', regex: /\bDS\b/i, standard: 'DS' },
+  { code: 'BAIC', regex: /\bBAIC\b/i, standard: 'BAIC' },
+  { code: 'HAVAL', regex: /\bHAVAL\b/i, standard: 'HAVAL' },
+  { code: 'GREAT WALL', regex: /\bGREAT\s+WALL\b/i, standard: 'GREAT WALL' },
+  { code: 'JAC', regex: /\bJAC\b/i, standard: 'JAC' },
+  { code: 'GEELY', regex: /\bGEELY\b/i, standard: 'GEELY' },
+  { code: 'BYD', regex: /\bBYD\b/i, standard: 'BYD' },
+  { code: 'DFSK', regex: /\bDFSK\b/i, standard: 'DFSK' },
+  { code: 'LIFAN', regex: /\bLIFAN\b/i, standard: 'LIFAN' },
+  { code: 'VOLVO', regex: /\bVOLVO\b/i, standard: 'VOLVO' },
+  { code: 'MINI', regex: /\bMINI\b/i, standard: 'MINI' },
+  { code: 'ALFA ROMEO', regex: /\b(ALFA\s+ROMEO|ALFA)\b/i, standard: 'ALFA ROMEO' },
+  { code: 'SEAT', regex: /\bSEAT\b/i, standard: 'SEAT' },
+  { code: 'DODGE', regex: /\bDODGE\b/i, standard: 'DODGE' },
+  { code: 'CHRYSLER', regex: /\bCHRYSLER\b/i, standard: 'CHRYSLER' },
+  { code: 'LEXUS', regex: /\bLEXUS\b/i, standard: 'LEXUS' },
+  { code: 'ISUZU', regex: /\bISUZU\b/i, standard: 'ISUZU' },
+  { code: 'IVECO', regex: /\bIVECO\b/i, standard: 'IVECO' },
 ];
 
-export const KNOWN_MODELS = [
-  'COROLLA CROSS', 'C3 AIRCROSS', 'C4 CACTUS', 'DUSTER OROCH', 'SANDERO STEPWAY',
-  'GOL TREND', 'T CROSS', 'T-CROSS', 'TIGGO 4', 'S 10', 'FOX CROSSFOX', 'GRAND CHEROKEE',
-  'CRUZE', 'ONIX', 'PRISMA', 'SPIN', 'TRACKER', 'BERLINGO', 'C3', 'C4',
-  'ARGO', 'CRONOS', 'FASTBACK', 'PALIO', 'PULSE', 'TORO', 'MOBI', 'STRADA', 'FIORINO', 'SIENA',
-  'ECOSPORT', 'FIESTA', 'FOCUS', 'KA', 'KUGA', 'MAVERICK', 'RANGER', 'TERRITORY', 'MONDEO',
-  'HRV', 'WRV', 'CRV', 'CIVIC', 'FIT',
-  'CRETA', 'TUCSON', 'SANTA FE', 'COMPASS', 'PATRIOT', 'RENEGADE', 'WRANGLER',
-  'SOUL', 'SPORTAGE', 'SELTOS', 'KICKS', 'NOTE', 'SENTRA', 'FRONTIER', 'VERSA', 'MARCH',
-  '2008', '208', '3008', '308', '408', 'PARTNER',
-  'ARKANA', 'CAPTUR', 'DUSTER', 'FLUENCE', 'KARDIAN', 'KWID', 'LOGAN', 'SANDERO', 'KANGOO', 'ALASKAN', 'MASTER',
-  'COROLLA', 'ETIOS', 'HILUX', 'YARIS', 'SW4', 'RAV4',
-  'AMAROK', 'GOLF', 'NIVUS', 'POLO', 'SURAN', 'TAOS', 'TERA', 'UP', 'VENTO', 'VIRTUS', 'FOX', 'SAVEIRO', 'TIGUAN'
-];
+export const KNOWN_BRANDS: BrandDefinition[] = CONTROLLED_BRANDS.map(b => ({
+  regex: b.regex,
+  standard: b.standard
+}));
+
+/**
+ * Catálogo de modelos conocidos agrupados por marca automotriz (Sección 6).
+ * Incluye modelos compuestos (ej: COROLLA CROSS, SANDERO STEPWAY, DUSTER OROCH, C3 AIRCROSS, C4 CACTUS, T CROSS, S 10).
+ */
+export const MODELS_BY_BRAND: Record<string, string[]> = {
+  CHEVROLET: [
+    'S 10', 'S-10', 'S10', 'ONIX PLUS', 'CORVETTE', 'CAMARO', 'TRAILBLAZER',
+    'EQUINOX', 'TRACKER', 'SPIN', 'PRISMA', 'ONIX', 'CRUZE', 'COBALT',
+    'AVALANCHE', 'SONIC', 'AGILE', 'CAPTIVA', 'MERIVA', 'ZAFIRA', 'CORSA', 'ASTRA', 'VECTRA'
+  ],
+  CITROEN: [
+    'C3 AIRCROSS', 'C4 CACTUS', 'C4 LOUNGE', 'C4 PICASSO', 'C3 PICASSO',
+    'GRAND C4 PICASSO', 'BERLINGO MULTISPACE', 'BERLINGO', 'BASALT', 'C3', 'C4', 'C5 AIRCROSS', 'C5'
+  ],
+  FIAT: [
+    'STRADA ADVENTURE', 'PALIO WEEKEND', 'GRAND SIENA', 'PULSE ABARTH', 'FASTBACK ABARTH',
+    'FASTBACK', 'CRONOS', 'PULSE', 'TORO', 'ARGO', 'MOBI', 'STRADA', 'FIORINO', 'SIENA',
+    'PALIO', 'UNO WAY', 'UNO', 'PUNTO', 'LINEA', 'IDEA', 'DOBLO', '500', 'QUBO'
+  ],
+  FORD: [
+    'ECOSPORT', 'RANGER RAPTOR', 'RANGER', 'F-150', 'F150', 'MAVERICK', 'TERRITORY',
+    'KUGA HYBRID', 'KUGA', 'MONDEO', 'FOCUS', 'FIESTA KINETIC', 'FIESTA', 'KA FREESTYLE', 'KA+', 'KA', 'MUSTANG', 'TRANSIT'
+  ],
+  HONDA: [
+    'HRV', 'HR-V', 'WRV', 'WR-V', 'CRV', 'CR-V', 'CIVIC', 'FIT', 'CITY', 'ACCORD'
+  ],
+  HYUNDAI: [
+    'GRAND I10', 'SANTA FE', 'TUCSON', 'CRETA', 'I10', 'I30', 'HB20', 'H1', 'IONIQ'
+  ],
+  JEEP: [
+    'GRAND CHEROKEE', 'CHEROKEE', 'COMMANDER', 'COMPASS', 'RENEGADE', 'WRANGLER', 'GLADIATOR', 'PATRIOT'
+  ],
+  KIA: [
+    'GRAND CARNIVAL', 'SPORTAGE', 'SELTOS', 'SORENTO', 'SOUL', 'CARNIVAL', 'CERATO', 'RIO', 'PICANTO'
+  ],
+  NISSAN: [
+    'FRONTIER', 'X-TRAIL', 'XTRAIL', 'KICKS', 'NOTE', 'SENTRA', 'VERSA', 'MARCH', 'TIIDA', 'MURANO', 'LEAF'
+  ],
+  PEUGEOT: [
+    'PARTNER PATAGONICA', '2008', '3008', '5008', '208 GT', '208', '308', '408', 'PARTNER', 'BOXER', 'EXPERT', '207', '206'
+  ],
+  RENAULT: [
+    'SANDERO STEPWAY', 'DUSTER OROCH', 'KANGOO STEPWAY', 'MASTER', 'ALASKAN', 'KARDIAN',
+    'ARKANA', 'CAPTUR', 'DUSTER', 'OROCH', 'FLUENCE', 'KANGOO', 'KWID', 'LOGAN',
+    'SANDERO', 'MEGANE', 'CLIO MIO', 'CLIO', 'SYMBOL', 'KOLEOS', 'TWINGO'
+  ],
+  TOYOTA: [
+    'COROLLA CROSS', 'HILUX SW4', 'RAV4', 'COROLLA', 'ETIOS', 'HILUX', 'YARIS', 'SW4',
+    'PRIUS', 'LAND CRUISER', 'INNOVA', 'CAMRY'
+  ],
+  VW: [
+    'GOL TREND', 'T-CROSS', 'T CROSS', 'FOX CROSSFOX', 'CROSS FOX', 'CROSSFOX',
+    'SURAN CROSS', 'SAVEIRO CROSS', 'AMAROK', 'NIVUS', 'TAOS', 'TERA', 'VIRTUS',
+    'POLO TRACK', 'POLO', 'GOLF GTI', 'GOLF', 'VENTO GLI', 'VENTO', 'TIGUAN ALLSPACE', 'TIGUAN',
+    'PASSAT', 'UP!', 'UP', 'VOYAGE', 'SURAN', 'FOX', 'SAVEIRO', 'SCIROCCO', 'BEETLE', 'BORA'
+  ],
+  VOLKSWAGEN: [
+    'GOL TREND', 'T-CROSS', 'T CROSS', 'FOX CROSSFOX', 'CROSS FOX', 'CROSSFOX',
+    'SURAN CROSS', 'SAVEIRO CROSS', 'AMAROK', 'NIVUS', 'TAOS', 'TERA', 'VIRTUS',
+    'POLO TRACK', 'POLO', 'GOLF GTI', 'GOLF', 'VENTO GLI', 'VENTO', 'TIGUAN ALLSPACE', 'TIGUAN',
+    'PASSAT', 'UP!', 'UP', 'VOYAGE', 'SURAN', 'FOX', 'SAVEIRO', 'SCIROCCO', 'BEETLE', 'BORA'
+  ],
+  CHERY: [
+    'TIGGO 4 PRO', 'TIGGO 2 PRO', 'TIGGO 8 PRO', 'TIGGO 2', 'TIGGO 3', 'TIGGO 4', 'TIGGO 5', 'TIGGO', 'QQ', 'ARRIZO 5', 'FULWIN', 'SKIN'
+  ],
+  AUDI: [
+    'A1', 'A3', 'A4', 'A5', 'A6', 'Q2', 'Q3', 'Q5', 'Q7', 'Q8', 'TT', 'E-TRON'
+  ],
+  BMW: [
+    'SERIE 1', 'SERIE 2', 'SERIE 3', 'SERIE 4', 'SERIE 5', 'X1', 'X2', 'X3', 'X4', 'X5', 'X6', 'M2', 'M3', 'M4'
+  ],
+  MERCEDES: [
+    'CLASE A', 'CLASE B', 'CLASE C', 'CLASE E', 'GLA', 'GLB', 'GLC', 'GLE', 'SPRINTER', 'VITO'
+  ],
+  'MERCEDES-BENZ': [
+    'CLASE A', 'CLASE B', 'CLASE C', 'CLASE E', 'GLA', 'GLB', 'GLC', 'GLE', 'SPRINTER', 'VITO'
+  ],
+  RAM: [
+    'RAMPAGE', '1500', '2500'
+  ],
+  DS: [
+    'DS 3 CROSSBACK', 'DS 7 CROSSBACK', 'DS 3', 'DS 4', 'DS 7'
+  ],
+  BAIC: [
+    'X25', 'X35', 'X55'
+  ],
+  HAVAL: [
+    'H1', 'H2', 'H6', 'JOLION'
+  ],
+  GEELY: [
+    'EMGRAND', 'COOLRAY', 'AZKARRA'
+  ],
+  DFSK: [
+    'GLORY 560', 'GLORY 580', 'C31', 'C32', 'C35'
+  ],
+  LIFAN: [
+    'X50', 'X60', 'MYWAY', 'FOISON'
+  ]
+};
+
+export const KNOWN_MODELS = Array.from(
+  new Set(Object.values(MODELS_BY_BRAND).flat())
+).sort((a, b) => b.length - a.length);
+
+/**
+ * Prefijos de la primera columna interna de Autonet que NUNCA deben formar parte
+ * de marca, modelo ni version (Sección 1, 8, 9).
+ */
+export const BANNED_VERSION_PREFIX_REGEX = /^(?:P\s*-\s*(?:C|T|TS|PA|AK|A)|P\s*-\s*|0\s*KM|0KM|FLOTA|TS|PA|AK|T|C|A)\b\s*/i;
+
+/**
+ * Limpia cualquier prefijo residual de la primera columna que haya podido quedar en version.
+ */
+export function cleanVersion(rawVersion: string): string {
+  if (!rawVersion) return '';
+  let v = rawVersion.trim().replace(/^[-_\s/|:]+/, '').trim();
+  let prev = '';
+  while (v !== prev && BANNED_VERSION_PREFIX_REGEX.test(v)) {
+    prev = v;
+    v = v.replace(BANNED_VERSION_PREFIX_REGEX, '').trim().replace(/^[-_\s/|:]+/, '').trim();
+  }
+  return v;
+}
+
+/**
+ * Limpia el texto de la columna UNIDAD - MODELO - VERSION retirando espacios múltiples,
+ * saltos de línea y cualquier token de clasificación interna desplazado (Sección 6, 8).
+ */
+export function cleanVehicleColumnText(raw: string): string {
+  if (!raw) return '';
+  let cleaned = raw.replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+  // Si comienza con un prefijo interno seguido de una marca automotriz, descartar el prefijo
+  cleaned = cleaned.replace(/^(?:P\s*-\s*(?:C|T|TS|PA|AK|A)|P\s*-\s*|0\s*KM|0KM|FLOTA|TS|PA|AK|T|C|A)\b\s*(?=(?:CHEVROLET|CITROEN|CITROËN|VW|VOLKSWAGEN|TOYOTA|FORD|FIAT|RENAULT|PEUGEOT|JEEP|NISSAN|HONDA|HYUNDAI|KIA|CHERY|AUDI|BMW|MERCEDES|RAM|MITSUBISHI|DS|BAIC|HAVAL|GEELY|BYD|DFSK|LIFAN|VOLVO|MINI|ALFA|SEAT|DODGE|CHRYSLER|LEXUS|ISUZU|IVECO)\b)/i, '').trim();
+  return cleaned;
+}
+
+export interface ParsedVehicleDescription {
+  marca: string;
+  modelo: string;
+  version: string;
+  rawDescription?: string;
+}
+
+/**
+ * Función central requerida (Sección 6) para descomponer la descripción del vehículo
+ * en marca, modelo y versión con coincidencia de modelo más largo primero.
+ */
+export function parseVehicleDescription(rawDescription: string): ParsedVehicleDescription {
+  // 1. Limpiar caracteres y espacios duplicados
+  const rawClean = (rawDescription || '')
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  // 2. Descartar prefijos de clasificación interna si quedaron al inicio
+  let cleanInput = rawClean.replace(/^(?:P\s*-\s*(?:C|T|TS|PA|AK|A)|P\s*-\s*|0\s*KM|0KM|FLOTA|TS|PA|AK|T|C|A)\b\s*/i, '').trim();
+
+  // 3. Detectar la marca automotriz a partir de la lista controlada
+  let earliestBrand: { code: string; standard: string; index: number; length: number } | null = null;
+  for (const b of CONTROLLED_BRANDS) {
+    const m = cleanInput.match(b.regex);
+    if (m && m.index !== undefined) {
+      if (!earliestBrand || m.index < earliestBrand.index) {
+        earliestBrand = {
+          code: b.code,
+          standard: b.standard,
+          index: m.index,
+          length: m[0].length,
+        };
+      }
+    }
+  }
+
+  if (!earliestBrand) {
+    // Intento con rawClean completo
+    for (const b of CONTROLLED_BRANDS) {
+      const m = rawClean.match(b.regex);
+      if (m && m.index !== undefined) {
+        if (!earliestBrand || m.index < earliestBrand.index) {
+          earliestBrand = {
+            code: b.code,
+            standard: b.standard,
+            index: m.index,
+            length: m[0].length,
+          };
+        }
+      }
+    }
+    if (earliestBrand) {
+      cleanInput = rawClean.slice(earliestBrand.index);
+      earliestBrand.index = 0;
+    }
+  }
+
+  if (!earliestBrand) {
+    return {
+      marca: 'DESCONOCIDA',
+      modelo: 'DESCONOCIDO',
+      version: cleanVersion(cleanInput),
+      rawDescription,
+    };
+  }
+
+  const marca = earliestBrand.standard;
+
+  // 4. Todo lo que estuviera antes de la marca es columna interna previa y se descarta
+  const afterBrand = cleanInput
+    .slice(earliestBrand.index + earliestBrand.length)
+    .trim()
+    .replace(/^[-_\s/|:]+/, '')
+    .trim();
+
+  // 5. Detectar el modelo utilizando catálogo de modelos de la marca ordenado de mayor a menor longitud
+  const brandKey = earliestBrand.code in MODELS_BY_BRAND ? earliestBrand.code : marca;
+  const brandModels = (MODELS_BY_BRAND[brandKey] || []).slice().sort((a, b) => b.length - a.length);
+
+  let modelo = '';
+  let restAfterModel = '';
+
+  // Coincidencia estricta al inicio de afterBrand
+  for (const candidate of brandModels) {
+    const escaped = candidate.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/[-\\s]+/g, '[-\\s]+');
+    const regexStart = new RegExp('^' + escaped + '(\\b|(?=[^A-Z0-9]))', 'i');
+    const matchStart = afterBrand.match(regexStart);
+    if (matchStart) {
+      modelo = candidate.toUpperCase();
+      restAfterModel = afterBrand.slice(matchStart[0].length).trim();
+      break;
+    }
+  }
+
+  // Si no coincidió al inicio, buscar en cualquier posición de afterBrand
+  if (!modelo) {
+    for (const candidate of brandModels) {
+      const escaped = candidate.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/[-\\s]+/g, '[-\\s]+');
+      const regexAny = new RegExp('\\b' + escaped + '(\\b|(?=[^A-Z0-9]))', 'i');
+      const matchAny = afterBrand.match(regexAny);
+      if (matchAny && matchAny.index !== undefined) {
+        modelo = candidate.toUpperCase();
+        restAfterModel = (afterBrand.slice(0, matchAny.index) + ' ' + afterBrand.slice(matchAny.index + matchAny[0].length)).trim();
+        break;
+      }
+    }
+  }
+
+  // Fallback a catálogo global si no se halló en la marca
+  if (!modelo) {
+    for (const candidate of KNOWN_MODELS) {
+      const escaped = candidate.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/[-\\s]+/g, '[-\\s]+');
+      const regexStart = new RegExp('^' + escaped + '(\\b|(?=[^A-Z0-9]))', 'i');
+      const matchStart = afterBrand.match(regexStart);
+      if (matchStart) {
+        modelo = candidate.toUpperCase();
+        restAfterModel = afterBrand.slice(matchStart[0].length).trim();
+        break;
+      }
+    }
+  }
+
+  // Si aún no hay modelo, tomar el primer token de afterBrand
+  if (!modelo) {
+    const parts = afterBrand.split(/\s+/);
+    modelo = (parts[0] || 'UNIDAD').toUpperCase();
+    restAfterModel = parts.slice(1).join(' ').trim();
+  }
+
+  // Normalizar variaciones de modelo compuesto
+  if (modelo === 'T-CROSS') modelo = 'T CROSS';
+  if (modelo === 'S-10' || modelo === 'S10') modelo = 'S 10';
+
+  // 6. VERSION: Todo lo que reste en la cadena debe ser version (Sección 7)
+  let version = cleanVersion(restAfterModel);
+  if (!version) {
+    version = 'ESTANDAR';
+  }
+
+  // Diagnóstico obligatorio (Sección 12)
+  console.log(`[PARSE-VEHICLE-DESC]\n  rawDescription: ${rawDescription}\n  marca: ${marca}\n  modelo: ${modelo}\n  version: ${version}`);
+
+  return {
+    marca,
+    modelo,
+    version,
+    rawDescription,
+  };
+}
 
 /**
  * Estructuras para la extracción por coordenadas (PDF.js transform x/y)
@@ -414,9 +695,9 @@ export class PdfService {
     // Límites calibrados por defecto para el formato apaisado estándar de Autonet (~842 pt de ancho)
     const scale = pageWidth > 0 ? pageWidth / 842 : 1;
     const defaultBounds: Record<TableColumnKey, ColumnRange> = {
-      orden: { min: 0 * scale, max: 45 * scale },
-      prefijo: { min: 45 * scale, max: 85 * scale },
-      vehiculo: { min: 85 * scale, max: 355 * scale },
+      orden: { min: 0 * scale, max: 40 * scale },
+      prefijo: { min: 40 * scale, max: 95 * scale },
+      vehiculo: { min: 95 * scale, max: 355 * scale },
       ub: { min: 355 * scale, max: 395 * scale },
       tipo: { min: 395 * scale, max: 430 * scale },
       patente: { min: 430 * scale, max: 495 * scale },
@@ -440,6 +721,7 @@ export class PdfService {
       const headerMatches = [hasPatenteHdr, hasUnidadHdr, hasKmHdr, hasPrecioHdr, hasAnioHdr].filter(Boolean).length;
       if (headerMatches >= 3) {
         // Encontramos la fila de encabezados: medir posiciones reales de tokens clave
+        let vehiculoLeft = 95 * scale;
         let vehiculoRight = 355 * scale;
         let ubCenter = 375 * scale;
         let tipoCenter = 412 * scale;
@@ -455,6 +737,12 @@ export class PdfService {
           const tText = token.text.toUpperCase();
           const tCenter = token.x + token.width / 2;
 
+          if (tText.includes('UNIDAD')) {
+            vehiculoLeft = Math.max(90 * scale, token.x - 2);
+          }
+          if (tText.includes('VERSION') || tText.includes('MODELO')) {
+            vehiculoRight = Math.max(vehiculoRight, token.x + token.width);
+          }
           if (tText.includes('UB')) ubCenter = tCenter;
           if (tText.includes('TIPO')) tipoCenter = tCenter;
           if (tText.includes('PATENTE') || tText.includes('DOMINIO')) patenteCenter = tCenter;
@@ -464,14 +752,13 @@ export class PdfService {
           if (tText.includes('EMPRESA')) empresaCenter = tCenter;
           if (tText.includes('VR') || tText.includes('VENTA') || tText.includes('PRECIO')) precioCenter = tCenter;
           if (tText.includes('TOMA') || tText.includes('FECHA')) fechaTomaCenter = tCenter;
-          if (tText.includes('VERSION') || tText.includes('UNIDAD')) vehiculoRight = token.x + token.width;
         }
 
-        // Calcular límites exactos dividiendo por el punto medio entre columnas
+        const ordenMax = Math.min(42 * scale, vehiculoLeft * 0.42);
         return {
-          orden: { min: 0, max: defaultBounds.orden.max },
-          prefijo: { min: defaultBounds.orden.max, max: defaultBounds.prefijo.max },
-          vehiculo: { min: defaultBounds.prefijo.max, max: (vehiculoRight + ubCenter) / 2 },
+          orden: { min: 0, max: ordenMax },
+          prefijo: { min: ordenMax, max: vehiculoLeft },
+          vehiculo: { min: vehiculoLeft, max: (vehiculoRight + ubCenter) / 2 },
           ub: { min: (vehiculoRight + ubCenter) / 2, max: (ubCenter + tipoCenter) / 2 },
           tipo: { min: (ubCenter + tipoCenter) / 2, max: (tipoCenter + patenteCenter) / 2 },
           patente: { min: (tipoCenter + patenteCenter) / 2, max: (patenteCenter + anioCenter) / 2 },
@@ -515,6 +802,13 @@ export class PdfService {
       let assigned = false;
       for (const [colKey, range] of Object.entries(bounds) as [TableColumnKey, ColumnRange][]) {
         if (tokenCenter >= range.min && tokenCenter < range.max) {
+          // Protección: si cae en columna 'vehiculo' pero es un prefijo interno en x < 120 pt,
+          // pertenece a la primera columna ('prefijo').
+          if (colKey === 'vehiculo' && token.x < 120 && BANNED_VERSION_PREFIX_REGEX.test(token.text.trim())) {
+            colTokens.prefijo.push(token);
+            assigned = true;
+            break;
+          }
           colTokens[colKey].push(token);
           assigned = true;
           break;
@@ -702,51 +996,22 @@ export class PdfService {
 
         // C) Validar y construir los datos normalizados de la unidad
 
-        // 1. MARCA y MODELO
-        // Extraer marca automotriz legítima de la columna Vehículo (NUNCA "Autonet")
-        const brandDef = KNOWN_BRANDS.find((b) => b.regex.test(assembledVehiculo));
-        if (!brandDef || brandDef.standard.toLowerCase() === 'autonet') {
+        // 1. MARCA, MODELO y VERSION (exclusivamente de columna UNIDAD - MODELO - VERSION)
+        const cleanDesc = cleanVehicleColumnText(assembledVehiculo);
+        const parsedDesc = parseVehicleDescription(cleanDesc);
+
+        if (parsedDesc.marca === 'DESCONOCIDA' || parsedDesc.marca.toLowerCase() === 'autonet') {
           discardedRecords.push({
             raw: combinedRaw,
-            reason: `Registro descartado: marca automotriz no válida o no identificada en '${assembledVehiculo}'.`,
+            reason: `Registro descartado: marca automotriz no válida o no identificada en '${cleanDesc}'.`,
           });
-          console.warn(`[PDF-PARSER] Registro descartado: marca automotriz inválida en "${assembledVehiculo}"`);
+          console.warn(`[PDF-PARSER] Registro descartado: marca automotriz inválida en "${cleanDesc}"`);
           continue;
         }
 
-        const marca = brandDef.standard;
-
-        // Limpiar el texto del vehículo retirando la marca y prefijos
-        let descWithoutBrand = assembledVehiculo.replace(brandDef.regex, '').trim();
-        descWithoutBrand = descWithoutBrand.replace(/^[-\s_/|:]+/, '').trim();
-
-        // Extraer modelo conocido
-        let modelo = '';
-        let version = '';
-
-        for (const kmModel of KNOWN_MODELS) {
-          const mRegex = new RegExp(`\\b${kmModel.replace('-', '[-\\s]')}\\b`, 'i');
-          const match = descWithoutBrand.match(mRegex);
-          if (match && match.index !== undefined) {
-            modelo = kmModel;
-            const rest = (descWithoutBrand.slice(0, match.index) + ' ' + descWithoutBrand.slice(match.index + match[0].length)).trim();
-            version = rest.replace(/^[-\s_/|:]+/, '').trim();
-            break;
-          }
-        }
-
-        if (!modelo) {
-          const parts = descWithoutBrand.split(/\s+/);
-          modelo = parts[0] || 'Modelo';
-          version = parts.slice(1).join(' ').trim();
-        }
-
-        if (modelo.toLowerCase() === 'modelo' || modelo === 'P' || modelo.startsWith('-')) {
-          modelo = 'Unidad';
-        }
-        if (!version) {
-          version = 'Estándar';
-        }
+        const marca = parsedDesc.marca;
+        const modelo = parsedDesc.modelo;
+        const version = parsedDesc.version;
 
         // 2. AÑO (columna Año)
         const yearMatch = assembledAnio.match(/\b(199\d|20[0-2]\d|2030)\b/);

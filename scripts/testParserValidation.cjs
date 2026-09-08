@@ -161,4 +161,235 @@ const checkLegit = isCorruptStoredVehicle(legitimateRecord);
 assert.strictEqual(checkLegit.isCorrupt, false);
 console.log(`[PASS] Registro legítimo 'Peugeot 2008 (AF458AG)' aceptado correctamente.\n`);
 
-console.log('TODAS LAS PRUEBAS COMPLETADAS CON ÉXITO.');
+console.log('=== TEST 4: DESCOMPOSICIÓN DE DESCRIPCIÓN (SECCIONES 3, 4, 6, 7, 8, 9) ===');
+
+const CONTROLLED_BRANDS = [
+  { code: 'CHEVROLET', regex: /\b(CHEVROLET|CHEVY)\b/i, standard: 'CHEVROLET' },
+  { code: 'CITROEN', regex: /\b(CITROEN|CITROËN)\b/i, standard: 'CITROEN' },
+  { code: 'VW', regex: /\b(VOLKSWAGEN|VW)\b/i, standard: 'VW' },
+  { code: 'TOYOTA', regex: /\bTOYOTA\b/i, standard: 'TOYOTA' },
+  { code: 'FORD', regex: /\bFORD\b/i, standard: 'FORD' },
+  { code: 'FIAT', regex: /\bFIAT\b/i, standard: 'FIAT' },
+  { code: 'RENAULT', regex: /\bRENAULT\b/i, standard: 'RENAULT' },
+  { code: 'PEUGEOT', regex: /\bPEUGEOT\b/i, standard: 'PEUGEOT' },
+  { code: 'JEEP', regex: /\bJEEP\b/i, standard: 'JEEP' },
+  { code: 'NISSAN', regex: /\bNISSAN\b/i, standard: 'NISSAN' },
+  { code: 'HONDA', regex: /\bHONDA\b/i, standard: 'HONDA' },
+  { code: 'HYUNDAI', regex: /\bHYUNDAI\b/i, standard: 'HYUNDAI' },
+  { code: 'KIA', regex: /\bKIA\b/i, standard: 'KIA' },
+];
+
+const MODELS_BY_BRAND = {
+  CHEVROLET: ['S 10', 'ONIX PLUS', 'CRUZE', 'ONIX', 'PRISMA', 'SPIN', 'TRACKER'],
+  CITROEN: ['C3 AIRCROSS', 'C4 CACTUS', 'BERLINGO', 'C3', 'C4'],
+  FIAT: ['STRADA ADVENTURE', 'CRONOS', 'PULSE', 'TORO', 'ARGO', 'MOBI', 'STRADA', 'PALIO'],
+  FORD: ['ECOSPORT', 'RANGER', 'MAVERICK', 'TERRITORY', 'FOCUS', 'FIESTA', 'KA'],
+  HYUNDAI: ['SANTA FE', 'TUCSON', 'CRETA', 'I10', 'HB20'],
+  RENAULT: ['SANDERO STEPWAY', 'DUSTER OROCH', 'KANGOO STEPWAY', 'DUSTER', 'SANDERO', 'LOGAN', 'KWID', 'ALASKAN'],
+  TOYOTA: ['COROLLA CROSS', 'HILUX SW4', 'COROLLA', 'ETIOS', 'HILUX', 'YARIS', 'SW4', 'RAV4'],
+  VW: ['GOL TREND', 'T CROSS', 'T-CROSS', 'AMAROK', 'NIVUS', 'TAOS', 'POLO', 'VENTO', 'SURAN', 'FOX', 'SAVEIRO']
+};
+
+const KNOWN_MODELS = Array.from(new Set(Object.values(MODELS_BY_BRAND).flat())).sort((a, b) => b.length - a.length);
+
+const BANNED_VERSION_PREFIX_REGEX = /^(?:P\s*-\s*(?:C|T|TS|PA|AK|A)|P\s*-\s*|0\s*KM|0KM|FLOTA|TS|PA|AK|T|C|A)\b\s*/i;
+
+function cleanVersion(rawVersion) {
+  if (!rawVersion) return '';
+  let v = rawVersion.trim().replace(/^[-_\s/|:]+/, '').trim();
+  let prev = '';
+  while (v !== prev && BANNED_VERSION_PREFIX_REGEX.test(v)) {
+    prev = v;
+    v = v.replace(BANNED_VERSION_PREFIX_REGEX, '').trim().replace(/^[-_\s/|:]+/, '').trim();
+  }
+  return v;
+}
+
+function parseVehicleDescription(rawDescription) {
+  const rawClean = (rawDescription || '')
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  let cleanInput = rawClean.replace(/^(?:P\s*-\s*(?:C|T|TS|PA|AK|A)|P\s*-\s*|0\s*KM|0KM|FLOTA|TS|PA|AK|T|C|A)\b\s*/i, '').trim();
+
+  let earliestBrand = null;
+  for (const b of CONTROLLED_BRANDS) {
+    const m = cleanInput.match(b.regex);
+    if (m && m.index !== undefined) {
+      if (!earliestBrand || m.index < earliestBrand.index) {
+        earliestBrand = {
+          code: b.code,
+          standard: b.standard,
+          index: m.index,
+          length: m[0].length,
+        };
+      }
+    }
+  }
+
+  if (!earliestBrand) {
+    for (const b of CONTROLLED_BRANDS) {
+      const m = rawClean.match(b.regex);
+      if (m && m.index !== undefined) {
+        if (!earliestBrand || m.index < earliestBrand.index) {
+          earliestBrand = {
+            code: b.code,
+            standard: b.standard,
+            index: m.index,
+            length: m[0].length,
+          };
+        }
+      }
+    }
+    if (earliestBrand) {
+      cleanInput = rawClean.slice(earliestBrand.index);
+      earliestBrand.index = 0;
+    }
+  }
+
+  if (!earliestBrand) {
+    return {
+      marca: 'DESCONOCIDA',
+      modelo: 'DESCONOCIDO',
+      version: cleanVersion(cleanInput),
+      rawDescription,
+    };
+  }
+
+  const marca = earliestBrand.standard;
+
+  const afterBrand = cleanInput
+    .slice(earliestBrand.index + earliestBrand.length)
+    .trim()
+    .replace(/^[-_\s/|:]+/, '')
+    .trim();
+
+  const brandKey = earliestBrand.code in MODELS_BY_BRAND ? earliestBrand.code : marca;
+  const brandModels = (MODELS_BY_BRAND[brandKey] || []).slice().sort((a, b) => b.length - a.length);
+
+  let modelo = '';
+  let restAfterModel = '';
+
+  for (const candidate of brandModels) {
+    const escaped = candidate.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/[-\\s]+/g, '[-\\s]+');
+    const regexStart = new RegExp('^' + escaped + '(\\b|(?=[^A-Z0-9]))', 'i');
+    const matchStart = afterBrand.match(regexStart);
+    if (matchStart) {
+      modelo = candidate.toUpperCase();
+      restAfterModel = afterBrand.slice(matchStart[0].length).trim();
+      break;
+    }
+  }
+
+  if (!modelo) {
+    for (const candidate of brandModels) {
+      const escaped = candidate.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/[-\\s]+/g, '[-\\s]+');
+      const regexAny = new RegExp('\\b' + escaped + '(\\b|(?=[^A-Z0-9]))', 'i');
+      const matchAny = afterBrand.match(regexAny);
+      if (matchAny && matchAny.index !== undefined) {
+        modelo = candidate.toUpperCase();
+        restAfterModel = (afterBrand.slice(0, matchAny.index) + ' ' + afterBrand.slice(matchAny.index + matchAny[0].length)).trim();
+        break;
+      }
+    }
+  }
+
+  if (!modelo) {
+    for (const candidate of KNOWN_MODELS) {
+      const escaped = candidate.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/[-\\s]+/g, '[-\\s]+');
+      const regexStart = new RegExp('^' + escaped + '(\\b|(?=[^A-Z0-9]))', 'i');
+      const matchStart = afterBrand.match(regexStart);
+      if (matchStart) {
+        modelo = candidate.toUpperCase();
+        restAfterModel = afterBrand.slice(matchStart[0].length).trim();
+        break;
+      }
+    }
+  }
+
+  if (!modelo) {
+    const parts = afterBrand.split(/\s+/);
+    modelo = (parts[0] || 'UNIDAD').toUpperCase();
+    restAfterModel = parts.slice(1).join(' ').trim();
+  }
+
+  if (modelo === 'T-CROSS') modelo = 'T CROSS';
+  if (modelo === 'S-10' || modelo === 'S10') modelo = 'S 10';
+
+  let version = cleanVersion(restAfterModel);
+  if (!version) {
+    version = 'ESTANDAR';
+  }
+
+  return { marca, modelo, version, rawDescription };
+}
+
+const descriptionTests = [
+  {
+    raw: 'CHEVROLET CRUZE 1.4 4 P LT MT',
+    expected: { marca: 'CHEVROLET', modelo: 'CRUZE', version: '1.4 4 P LT MT' }
+  },
+  {
+    raw: 'CHEVROLET ONIX 1.0 4 P LTZ PLUS AT',
+    expected: { marca: 'CHEVROLET', modelo: 'ONIX', version: '1.0 4 P LTZ PLUS AT' }
+  },
+  {
+    raw: 'FORD ECOSPORT FREESTYLE 1.5 MT',
+    expected: { marca: 'FORD', modelo: 'ECOSPORT', version: 'FREESTYLE 1.5 MT' }
+  },
+  {
+    raw: 'RENAULT SANDERO STEPWAY PRIVILEGE 1.6',
+    expected: { marca: 'RENAULT', modelo: 'SANDERO STEPWAY', version: 'PRIVILEGE 1.6' }
+  },
+  {
+    raw: 'TOYOTA COROLLA CROSS 2.0 XEI CVT',
+    expected: { marca: 'TOYOTA', modelo: 'COROLLA CROSS', version: '2.0 XEI CVT' }
+  },
+  {
+    raw: 'VW AMAROK DC HIGHLINE 4X4 AT 258 CV',
+    expected: { marca: 'VW', modelo: 'AMAROK', version: 'DC HIGHLINE 4X4 AT 258 CV' }
+  },
+  // Casos con prefijos internos de la columna anterior desplazados
+  {
+    raw: 'T CHEVROLET CRUZE 1.4 4 P LT MT',
+    expected: { marca: 'CHEVROLET', modelo: 'CRUZE', version: '1.4 4 P LT MT' }
+  },
+  {
+    raw: 'P - C CITROEN C3 1.6 FEEL',
+    expected: { marca: 'CITROEN', modelo: 'C3', version: '1.6 FEEL' }
+  },
+  {
+    raw: 'TS HYUNDAI TUCSON 2.0 CRDI 4WD AT',
+    expected: { marca: 'HYUNDAI', modelo: 'TUCSON', version: '2.0 CRDI 4WD AT' }
+  },
+  {
+    raw: 'PA VW POLO HIGHLINE',
+    expected: { marca: 'VW', modelo: 'POLO', version: 'HIGHLINE' }
+  }
+];
+
+for (const dt of descriptionTests) {
+  const parsed = parseVehicleDescription(dt.raw);
+  assert.strictEqual(parsed.marca, dt.expected.marca, `Marca incorrecta para ${dt.raw}`);
+  assert.strictEqual(parsed.modelo, dt.expected.modelo, `Modelo incorrecto para ${dt.raw}`);
+  assert.strictEqual(parsed.version, dt.expected.version, `Versión incorrecta para ${dt.raw}`);
+  console.log(`[PASS] parseVehicleDescription: "${dt.raw}" -> MARCA=${parsed.marca}, MODELO=${parsed.modelo}, VERSION=${parsed.version}`);
+}
+
+// Probar cleanVersion directamente sobre versiones contaminadas de la base de datos
+const cleanVersionTests = [
+  { raw: 'T 1.4 4 P LT MT', expected: '1.4 4 P LT MT' },
+  { raw: 'C 1.0 4 P LTZ PLUS AT', expected: '1.0 4 P LTZ PLUS AT' },
+  { raw: 'P - C 1.0 4 P LTZ PLUS AT', expected: '1.0 4 P LTZ PLUS AT' },
+  { raw: '0 KM HIGHLINE', expected: 'HIGHLINE' },
+  { raw: 'FLOTA PRIVILEGE 1.6', expected: 'PRIVILEGE 1.6' }
+];
+
+for (const cv of cleanVersionTests) {
+  const cleaned = cleanVersion(cv.raw);
+  assert.strictEqual(cleaned, cv.expected, `cleanVersion falló para ${cv.raw}`);
+  console.log(`[PASS] cleanVersion: "${cv.raw}" -> "${cleaned}"`);
+}
+
+console.log('\nTODAS LAS PRUEBAS DE PARSING Y NORMALIZACIÓN COMPLETADAS CON ÉXITO.');
