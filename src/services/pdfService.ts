@@ -387,6 +387,74 @@ export const KNOWN_MODELS = Array.from(
 ).sort((a, b) => b.length - a.length);
 
 /**
+ * Función segura para escapar caracteres especiales de RegExp (Sección 3).
+ */
+export function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Constructor controlado de RegExp con registro de depuración y captura detallada de fallos (Sección 6).
+ */
+export function createSafeRegExp(pattern: string, flags?: string): RegExp {
+  console.debug('[AUTONET REGEX]', pattern);
+  try {
+    return new RegExp(pattern, flags);
+  } catch (error) {
+    console.error('[AUTONET INVALID REGEX]', {
+      pattern,
+      flags,
+      error,
+    });
+    throw error;
+  }
+}
+
+/**
+ * Catálogo de códigos internos conocidos de la primera columna (Sección 4).
+ * Se resuelven preferentemente mediante Set/strings normalizados para evitar regex dinámicas frágiles.
+ */
+export const INTERNAL_CODES = new Set([
+  'T',
+  'C',
+  'A',
+  'TS',
+  'PA',
+  'AK',
+  'P - C',
+  'P - T',
+  'P - TS',
+  'P - PA',
+  '0 KM',
+  '0KM',
+  'FLOTA',
+]);
+
+/**
+ * Verifica si un valor corresponde a un código interno de clasificación (Sección 4).
+ */
+export function isInternalCode(value?: string): boolean {
+  if (!value) return false;
+  const norm = value.replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim().toUpperCase();
+  if (INTERNAL_CODES.has(norm)) return true;
+  const simplified = norm.replace(/\s*-\s*/g, ' - ');
+  return INTERNAL_CODES.has(simplified);
+}
+
+/**
+ * Construye de forma segura una expresión regular para detectar modelos con espacios o guiones flexibles.
+ */
+function buildModelRegex(candidate: string, atStart: boolean): RegExp {
+  const parts = candidate.split(/[\s-]+/).filter(Boolean);
+  const escapedParts = parts.map(escapeRegExp);
+  const patternBody = escapedParts.join('[-\\s]+');
+  const pattern = atStart
+    ? '^' + patternBody + '(\\b|(?=[^A-Z0-9]))'
+    : '\\b' + patternBody + '(\\b|(?=[^A-Z0-9]))';
+  return createSafeRegExp(pattern, 'i');
+}
+
+/**
  * Prefijos de la primera columna interna de Autonet que NUNCA deben formar parte
  * de marca, modelo ni version (Sección 1, 8, 9).
  */
@@ -398,6 +466,7 @@ export const BANNED_VERSION_PREFIX_REGEX = /^(?:P\s*-\s*(?:C|T|TS|PA|AK|A)|P\s*-
 export function cleanVersion(rawVersion: string): string {
   if (!rawVersion) return '';
   let v = rawVersion.trim().replace(/^[-_\s/|:]+/, '').trim();
+  if (isInternalCode(v)) return '';
   let prev = '';
   while (v !== prev && BANNED_VERSION_PREFIX_REGEX.test(v)) {
     prev = v;
@@ -504,8 +573,7 @@ export function parseVehicleDescription(rawDescription: string): ParsedVehicleDe
 
   // Coincidencia estricta al inicio de afterBrand
   for (const candidate of brandModels) {
-    const escaped = candidate.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/[-\\s]+/g, '[-\\s]+');
-    const regexStart = new RegExp('^' + escaped + '(\\b|(?=[^A-Z0-9]))', 'i');
+    const regexStart = buildModelRegex(candidate, true);
     const matchStart = afterBrand.match(regexStart);
     if (matchStart) {
       modelo = candidate.toUpperCase();
@@ -517,8 +585,7 @@ export function parseVehicleDescription(rawDescription: string): ParsedVehicleDe
   // Si no coincidió al inicio, buscar en cualquier posición de afterBrand
   if (!modelo) {
     for (const candidate of brandModels) {
-      const escaped = candidate.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/[-\\s]+/g, '[-\\s]+');
-      const regexAny = new RegExp('\\b' + escaped + '(\\b|(?=[^A-Z0-9]))', 'i');
+      const regexAny = buildModelRegex(candidate, false);
       const matchAny = afterBrand.match(regexAny);
       if (matchAny && matchAny.index !== undefined) {
         modelo = candidate.toUpperCase();
@@ -531,8 +598,7 @@ export function parseVehicleDescription(rawDescription: string): ParsedVehicleDe
   // Fallback a catálogo global si no se halló en la marca
   if (!modelo) {
     for (const candidate of KNOWN_MODELS) {
-      const escaped = candidate.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/[-\\s]+/g, '[-\\s]+');
-      const regexStart = new RegExp('^' + escaped + '(\\b|(?=[^A-Z0-9]))', 'i');
+      const regexStart = buildModelRegex(candidate, true);
       const matchStart = afterBrand.match(regexStart);
       if (matchStart) {
         modelo = candidate.toUpperCase();
@@ -852,7 +918,7 @@ export class PdfService {
         if (tokenCenter >= range.min && tokenCenter < range.max) {
           // Protección: si cae en columna 'vehiculo' pero es un prefijo interno en x < 75 pt,
           // pertenece a la primera columna ('prefijo').
-          if (colKey === 'vehiculo' && token.x < 75 && BANNED_VERSION_PREFIX_REGEX.test(token.text.trim())) {
+          if (colKey === 'vehiculo' && token.x < 75 && (isInternalCode(token.text) || BANNED_VERSION_PREFIX_REGEX.test(token.text.trim()))) {
             colTokens.prefijo.push(token);
             assigned = true;
             break;
