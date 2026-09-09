@@ -11,16 +11,19 @@ import {
   ParsingDiagnostics,
   DiscardedRecordDetail,
   DiscardedSummary,
-  SafetyValidation
+  SafetyValidation,
+  PdfStageInfo
 } from '../types/stock';
 import { autonetService } from './autonetService';
 import { normalizeMileage, parseArgentineInteger, parseMileage, parsePrice } from '../utils/formatters';
 import { getSituacionOperativaInfo } from '../utils/autonetHelpers';
 
+import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+
 // Configure pdfjs worker if in browser
 if (typeof window !== 'undefined') {
   try {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+    pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
   } catch (e) {
     console.warn('pdfjs worker initialization error:', e);
   }
@@ -913,30 +916,111 @@ export class PdfService {
    * Extrae texto y detecta vehículos de cualquier archivo PDF utilizando
    * EXCLUSIVAMENTE coordenadas X / Y de PDF.js para interpretar la estructura tabular.
    */
-  public async extractFromPdfFile(file: File): Promise<ParsePdfResult> {
+  public async extractFromPdfFile(
+    file: File,
+    onStageUpdate?: (stage: PdfStageInfo) => void
+  ): Promise<ParsePdfResult> {
     try {
-      const arrayBuffer = await file.arrayBuffer();
-      const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+      // 1. Etapa: Archivo recibido
+      onStageUpdate?.({
+        key: 'archivo_recibido',
+        label: 'Archivo recibido',
+        status: 'ok',
+        detail: `${file.name} (${(file.size / 1024).toFixed(1)} KB)`,
+      });
+
+      // 2. Etapa: ArrayBuffer creado
+      const buffer = await file.arrayBuffer();
+      console.log('[AUTONET PDF] PDF bytes:', buffer.byteLength);
+      if (buffer.byteLength === 0) {
+        throw new Error('El archivo PDF recibido está vacío (0 bytes).');
+      }
+      onStageUpdate?.({
+        key: 'arraybuffer_creado',
+        label: 'ArrayBuffer creado',
+        status: 'ok',
+        detail: `${buffer.byteLength.toLocaleString('es-AR')} bytes`,
+      });
+
+      // 3. Etapa: PDF cargado con PDF.js (Prueba mínima de inicialización, Sección 6)
+      onStageUpdate?.({
+        key: 'pdf_cargado',
+        label: 'Cargando motor PDF.js',
+        status: 'in_progress',
+      });
+      const loadingTask = pdfjsLib.getDocument({
+        data: new Uint8Array(buffer),
+      });
       const pdf = await loadingTask.promise;
+      console.log('[AUTONET PDF] PDF pages:', pdf.numPages);
+      onStageUpdate?.({
+        key: 'pdf_cargado',
+        label: 'PDF cargado',
+        status: 'ok',
+        detail: `PDF.js v${pdfjsLib.version}`,
+      });
+
+      // 4. Etapa: Páginas detectadas
+      if (!pdf.numPages || pdf.numPages === 0) {
+        throw new Error('El documento no contiene páginas legibles (numPages: 0).');
+      }
+      onStageUpdate?.({
+        key: 'paginas_detectadas',
+        label: 'Páginas detectadas',
+        status: 'ok',
+        detail: `${pdf.numPages} páginas`,
+      });
+
+      // 5. Etapa: Texto extraído (Prueba de primera página y extracción total, Sección 7)
+      onStageUpdate?.({
+        key: 'texto_extraido',
+        label: 'Extrayendo texto de páginas',
+        status: 'in_progress',
+      });
+
+      const firstPage = await pdf.getPage(1);
+      const firstContent = await firstPage.getTextContent();
+      console.log('[AUTONET PDF] Page 1 text items:', firstContent.items?.length ?? 0);
+      if (!firstContent.items || firstContent.items.length === 0) {
+        throw new Error('La página 1 del PDF no contiene texto legible (posible archivo escaneado o protegido).');
+      }
 
       let allPageVisualRows: VisualRow[] = [];
       let fullText = '';
       const warnings: string[] = [];
 
-      // 1. Extraer tokens por página y agrupar en filas visuales
       for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
         try {
-          const page = await pdf.getPage(pageNum);
-          const textContent = await page.getTextContent();
+          const page = pageNum === 1 ? firstPage : await pdf.getPage(pageNum);
+          const textContent = pageNum === 1 ? firstContent : await page.getTextContent();
           const pageTokens = this.extractTokensFromPage(textContent, pageNum);
           const pageRows = this.groupTokensIntoVisualRows(pageTokens);
 
           allPageVisualRows = allPageVisualRows.concat(pageRows);
           fullText += `\n--- PÁGINA ${pageNum} ---\n` + pageRows.map((r) => r.rawLine).join('\n');
-        } catch (err: any) {
-          warnings.push(`No se pudo leer la página ${pageNum}: ${err?.message || ''}`);
+        } catch (pageErr: any) {
+          console.warn(`[AUTONET PDF] Advertencia leyendo página ${pageNum}:`, pageErr);
+          warnings.push(`No se pudo leer la página ${pageNum}: ${pageErr?.message || ''}`);
         }
       }
+
+      console.log('[AUTONET PDF] Total filas visuales extraídas:', allPageVisualRows.length);
+      if (allPageVisualRows.length === 0) {
+        throw new Error('No se pudo extraer ninguna fila visual del documento PDF.');
+      }
+      onStageUpdate?.({
+        key: 'texto_extraido',
+        label: 'Texto extraído',
+        status: 'ok',
+        detail: `${allPageVisualRows.length} líneas analizadas`,
+      });
+
+      // 6. Etapa: Reconstrucción de filas
+      onStageUpdate?.({
+        key: 'filas_reconstruidas',
+        label: 'Reconstruyendo filas',
+        status: 'in_progress',
+      });
 
       // 2. Detectar límites de columnas a partir de los encabezados de la tabla
       const columnBounds = this.detectHeaderBounds(allPageVisualRows);
@@ -1324,6 +1408,20 @@ export class PdfService {
         }
       }
 
+      onStageUpdate?.({
+        key: 'filas_reconstruidas',
+        label: 'Filas reconstruidas',
+        status: 'ok',
+        detail: `${recordsReconstructed} filas detectadas`,
+      });
+
+      onStageUpdate?.({
+        key: 'vehiculos_validados',
+        label: 'Vehículos validados',
+        status: 'ok',
+        detail: `${validVehicles.length} unidades válidas`,
+      });
+
       const diagnostics: ParsingDiagnostics = {
         pageCount: pdf.numPages,
         linesExtracted: allPageVisualRows.length,
@@ -1345,25 +1443,9 @@ export class PdfService {
         parseWarnings: warnings,
         diagnostics,
       };
-    } catch (err: any) {
-      console.error('Error al procesar archivo PDF:', err);
-      const emptyDiag: ParsingDiagnostics = {
-        pageCount: 0,
-        linesExtracted: 0,
-        recordsReconstructed: 0,
-        validRecords: 0,
-        discardedRecords: 0,
-        discardedDetails: [{ raw: '', reason: `Error al abrir el PDF: ${err?.message || 'Archivo dañado o protegido'}` }],
-      };
-      return {
-        fileName: file.name,
-        fileSize: file.size,
-        pageCount: 0,
-        rawText: '',
-        extractedVehicles: [],
-        parseWarnings: [`Error al procesar el archivo PDF: ${err?.message || 'Formato no legible'}`],
-        diagnostics: emptyDiag,
-      };
+    } catch (error: any) {
+      console.error('[AUTONET PDF IMPORT ERROR]', error);
+      throw error;
     }
   }
 

@@ -15,9 +15,11 @@ import {
   HelpCircle,
   Sparkles,
   Info,
-  ChevronDown
+  ChevronDown,
+  AlertCircle,
+  XCircle
 } from 'lucide-react';
-import { DiffResult, Vehicle } from '../types/stock';
+import { DiffResult, Vehicle, PdfStageInfo, PdfProcessingError } from '../types/stock';
 import { pdfService } from '../services/pdfService';
 import { stockService } from '../services/stockService';
 import { formatCurrency, formatKm } from '../utils/formatters';
@@ -28,6 +30,16 @@ interface UpdateStockViewProps {
   onCancel: () => void;
 }
 
+const INITIAL_STAGES: PdfStageInfo[] = [
+  { key: 'archivo_recibido', label: 'Archivo recibido', status: 'pending' },
+  { key: 'arraybuffer_creado', label: 'ArrayBuffer creado', status: 'pending' },
+  { key: 'pdf_cargado', label: 'Motor PDF.js inicializado', status: 'pending' },
+  { key: 'paginas_detectadas', label: 'Páginas detectadas', status: 'pending' },
+  { key: 'texto_extraido', label: 'Texto extraído', status: 'pending' },
+  { key: 'filas_reconstruidas', label: 'Filas reconstruidas', status: 'pending' },
+  { key: 'vehiculos_validados', label: 'Vehículos validados', status: 'pending' },
+];
+
 export const UpdateStockView: React.FC<UpdateStockViewProps> = ({
   currentStock,
   onUpdateCompleted,
@@ -35,6 +47,8 @@ export const UpdateStockView: React.FC<UpdateStockViewProps> = ({
 }) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [stages, setStages] = useState<PdfStageInfo[]>(INITIAL_STAGES);
+  const [pdfError, setPdfError] = useState<PdfProcessingError | null>(null);
   const [diffResult, setDiffResult] = useState<DiffResult | null>(null);
   const [filterDiffType, setFilterDiffType] = useState<'todos' | 'nuevos' | 'modificados' | 'no_aparecen'>('todos');
   const [pdfRawInfo, setPdfRawInfo] = useState<{ pages: number; textSnippet: string } | null>(null);
@@ -62,15 +76,44 @@ export const UpdateStockView: React.FC<UpdateStockViewProps> = ({
   const processPdfFile = async (file: File) => {
     setSelectedFile(file);
     setIsProcessing(true);
+    setPdfError(null);
+    setDiffResult(null);
+    setStages(INITIAL_STAGES.map((s) => ({ ...s, status: 'pending' })));
+
+    let lastKnownStage = 'Lectura inicial';
+
     try {
-      // Extraer datos usando pdfjs-dist
-      const parsed = await pdfService.extractFromPdfFile(file);
+      // Extraer datos usando pdfjs-dist con reporte de etapas
+      const parsed = await pdfService.extractFromPdfFile(file, (stageInfo) => {
+        lastKnownStage = stageInfo.label;
+        setStages((prev) =>
+          prev.map((s) => (s.key === stageInfo.key ? { ...s, ...stageInfo } : s))
+        );
+      });
+
+      // Validación estricta: NO interpretar 0 como resultado válido ni continuar con compareStock
+      if (!parsed.pageCount || parsed.pageCount === 0) {
+        throw new Error('El motor PDF.js no detectó páginas legibles en el archivo (numPages: 0).');
+      }
+
+      if (!parsed.diagnostics || parsed.diagnostics.recordsReconstructed === 0) {
+        throw new Error(
+          `No se reconstruyó ninguna fila tabular en el documento (${parsed.diagnostics?.linesExtracted || 0} líneas de texto analizadas). Verifique que el documento corresponda al listado de stock Autonet.`
+        );
+      }
+
+      if (parsed.extractedVehicles.length === 0) {
+        throw new Error(
+          `Se reconstruyeron ${parsed.diagnostics.recordsReconstructed} filas pero ninguna superó las validaciones obligatorias de patente y columnas. Se detiene el proceso para evitar un falso borrado masivo del stock.`
+        );
+      }
+
       setPdfRawInfo({
         pages: parsed.pageCount,
         textSnippet: parsed.rawText.slice(0, 600),
       });
 
-      // Comparar contra el stock actual
+      // Comparar contra el stock actual únicamente si la extracción fue exitosa
       const diff = pdfService.compareWithStock(
         parsed.extractedVehicles,
         currentStock,
@@ -78,15 +121,30 @@ export const UpdateStockView: React.FC<UpdateStockViewProps> = ({
         parsed.diagnostics
       );
       setDiffResult(diff);
-    } catch (err) {
-      console.error('Error reading PDF:', err);
-      // Fallback tolerante si el PDF está protegido o no tiene texto accesible
-      const fallbackDiff = pdfService.compareWithStock(
-        [],
-        currentStock,
-        file.name
-      );
-      setDiffResult(fallbackDiff);
+    } catch (error: any) {
+      console.error('[AUTONET PDF IMPORT ERROR]', error);
+      
+      // Marcar la etapa fallida en rojo
+      setStages((prev) => {
+        let marked = false;
+        return prev.map((s) => {
+          if (!marked && s.status !== 'ok') {
+            marked = true;
+            return { ...s, status: 'error', detail: error?.message || 'Fallo en esta etapa' };
+          }
+          return s;
+        });
+      });
+
+      setPdfError({
+        fileName: file.name,
+        stage: lastKnownStage,
+        technicalMessage: error?.message || String(error) || 'Error desconocido al procesar el archivo PDF',
+        timestamp: new Date().toLocaleTimeString('es-AR'),
+      });
+
+      // CRÍTICO: diffResult queda en null. NO ejecutar compareStock, NO generar 256 "Ya no figuran".
+      setDiffResult(null);
     } finally {
       setIsProcessing(false);
     }
@@ -128,6 +186,8 @@ export const UpdateStockView: React.FC<UpdateStockViewProps> = ({
     setSelectedFile(null);
     setDiffResult(null);
     setPdfRawInfo(null);
+    setPdfError(null);
+    setStages(INITIAL_STAGES.map((s) => ({ ...s, status: 'pending' })));
     setMissingActions({});
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
@@ -166,6 +226,109 @@ export const UpdateStockView: React.FC<UpdateStockViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* ERROR CRÍTICO AL PROCESAR PDF */}
+      {pdfError && (
+        <div className="bg-red-50 border-2 border-red-400 rounded-2xl p-6 text-red-950 shadow-sm space-y-4 animate-in fade-in duration-200">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-start gap-3.5">
+              <div className="p-2.5 bg-red-100 text-red-700 rounded-xl shrink-0 mt-0.5">
+                <AlertCircle className="w-7 h-7 text-red-600" />
+              </div>
+              <div>
+                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-red-200 text-red-900 uppercase tracking-wide">
+                  Error de Lectura
+                </span>
+                <h2 className="text-lg font-black text-red-950 mt-1">
+                  ERROR AL PROCESAR PDF
+                </h2>
+                <p className="text-xs text-red-800 mt-0.5">
+                  No se pudo procesar el archivo. La comparación fue cancelada automáticamente para proteger el stock vigente y evitar falsas bajas.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={handleReset}
+              className="px-3 py-1.5 rounded-lg bg-white hover:bg-red-100 text-red-800 border border-red-300 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+              <span>Cerrar</span>
+            </button>
+          </div>
+
+          {/* Ficha técnica del error */}
+          <div className="bg-white/95 border border-red-200 rounded-xl p-4 text-xs space-y-3 font-mono">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 pb-2.5 border-b border-red-100">
+              <div>
+                <span className="text-slate-500 font-sans block text-[10px] uppercase font-bold">Archivo:</span>
+                <span className="font-semibold text-slate-800 break-all">{pdfError.fileName}</span>
+              </div>
+              <div>
+                <span className="text-slate-500 font-sans block text-[10px] uppercase font-bold">Etapa:</span>
+                <span className="font-semibold text-red-700">{pdfError.stage}</span>
+              </div>
+              <div>
+                <span className="text-slate-500 font-sans block text-[10px] uppercase font-bold">Hora:</span>
+                <span className="font-semibold text-slate-700">{pdfError.timestamp}</span>
+              </div>
+            </div>
+            <div>
+              <span className="text-slate-500 font-sans block text-[10px] uppercase font-bold mb-1">
+                Mensaje de la excepción:
+              </span>
+              <div className="bg-red-950 text-red-100 p-3 rounded-lg text-[11px] whitespace-pre-wrap overflow-x-auto font-mono">
+                {pdfError.technicalMessage}
+              </div>
+            </div>
+          </div>
+
+          {/* Diagnóstico por etapas */}
+          <div className="space-y-2">
+            <span className="text-xs font-bold text-red-950 uppercase tracking-wide block">
+              Diagnóstico por etapas:
+            </span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+              {stages.map((stage) => (
+                <div
+                  key={stage.key}
+                  className={`p-2.5 rounded-xl border text-xs flex items-center justify-between gap-2 ${
+                    stage.status === 'ok'
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                      : stage.status === 'error'
+                      ? 'bg-red-100 border-red-300 text-red-950 font-bold ring-1 ring-red-400'
+                      : stage.status === 'in_progress'
+                      ? 'bg-blue-50 border-blue-200 text-blue-900'
+                      : 'bg-slate-50 border-slate-200 text-slate-400'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 truncate">
+                    {stage.status === 'ok' && <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />}
+                    {stage.status === 'error' && <XCircle className="w-4 h-4 text-red-600 shrink-0" />}
+                    {stage.status === 'in_progress' && <RefreshCw className="w-4 h-4 text-blue-600 animate-spin shrink-0" />}
+                    {stage.status === 'pending' && <Clock className="w-4 h-4 text-slate-400 shrink-0" />}
+                    <span className="truncate">{stage.label}</span>
+                  </div>
+                  {stage.detail && (
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/70 border border-slate-200 shrink-0">
+                      {stage.detail}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="pt-2 flex justify-end">
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="px-4 py-2 rounded-xl bg-red-700 hover:bg-red-800 text-white text-xs font-bold shadow-sm flex items-center gap-2 transition-colors cursor-pointer"
+            >
+              <FileUp className="w-4 h-4" />
+              <span>Reintentar con otro archivo</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Si todavía no hay un lote analizado: Selector de Archivo o Simulador */}
       {!diffResult && (
@@ -249,19 +412,19 @@ export const UpdateStockView: React.FC<UpdateStockViewProps> = ({
               <div className="space-y-1.5 flex-1">
                 <div className="flex items-center justify-between">
                   <h4 className="font-extrabold text-base text-red-950">
-                    Actualización Bloqueada por Seguridad
+                    Bloqueo de Seguridad: Stock Sospechosamente Bajo
                   </h4>
                   <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-red-200 text-red-900 uppercase tracking-wide">
-                    Acción Preventiva
+                    Umbral Preventivo
                   </span>
                 </div>
                 <p className="text-xs text-red-900 leading-relaxed font-medium">
                   {diffResult.safetyValidation.blockedReason}
                 </p>
                 <div className="mt-2 text-[11px] bg-white/70 border border-red-200 rounded-lg p-2.5 text-red-800">
-                  <p className="font-semibold">¿Por qué sucede esto?</p>
+                  <p className="font-semibold">El documento fue interpretado correctamente por el lector:</p>
                   <p className="text-red-700 mt-0.5">
-                    Para proteger el stock comercial existente ({currentStock.length} unidades), el sistema impide aplicar un archivo que contenga menos del 60% de las unidades actuales. Verifique que el archivo PDF no esté dañado o cortado.
+                    Se procesaron con éxito {diffResult.diagnostics.pageCount} páginas y {diffResult.diagnostics.linesExtracted} líneas. Sin embargo, solo {diffResult.totalEncontrados} unidades fueron reconocidas como válidas frente a las {currentStock.length} unidades del stock actual (menos del 60%). Para evitar bajas accidentales en masa, la importación se mantiene bloqueada.
                   </p>
                 </div>
               </div>

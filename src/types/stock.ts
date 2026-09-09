@@ -125,6 +125,29 @@ export interface SafetyValidation {
   ratio: number;
 }
 
+export type PdfProcessingStageKey =
+  | 'archivo_recibido'
+  | 'arraybuffer_creado'
+  | 'pdf_cargado'
+  | 'paginas_detectadas'
+  | 'texto_extraido'
+  | 'filas_reconstruidas'
+  | 'vehiculos_validados';
+
+export interface PdfStageInfo {
+  key: PdfProcessingStageKey;
+  label: string;
+  status: 'pending' | 'in_progress' | 'ok' | 'error';
+  detail?: string;
+}
+
+export interface PdfProcessingError {
+  fileName: string;
+  stage: string;
+  technicalMessage: string;
+  timestamp: string;
+}
+
 export interface DiffResult {
   archivoNombre: string;
   totalEncontrados: number;
