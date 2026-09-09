@@ -31,6 +31,32 @@ if (typeof window !== 'undefined') {
 
 export { normalizeMileage, parseArgentineInteger, parseMileage, parsePrice };
 
+/**
+ * Normaliza cadenas de texto para comparación comercial libre de falsos positivos
+ * (ignora mayúsculas/minúsculas, acentos, saltos de línea y espacios múltiples redundantes).
+ */
+export function normalizeTextForComparison(text: any): string {
+  if (text === null || text === undefined) return '';
+  return String(text)
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // Elimina acentos (ej: Neuquén -> Neuquen, Citroën -> Citroen)
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .toLowerCase();
+}
+
+/**
+ * Parsea un precio numérico entero garantizando comparación matemática estricta
+ * ("29.900.000" y 29900000 -> 29900000).
+ */
+export function parseNumericPrice(val: any): number {
+  if (typeof val === 'number') return Math.round(val);
+  if (!val) return 0;
+  const cleaned = String(val).replace(/[^0-9]/g, '');
+  return parseInt(cleaned, 10) || 0;
+}
+
 export interface ExtractedVehicleDraft {
   patente?: string;
   marca?: string;
@@ -1686,21 +1712,23 @@ export class PdfService {
         // Vehículo existente en stock actual: comparar campos
         const changes: FieldChange[] = [];
 
-        // Precio
-        if (incoming.precio !== undefined && incoming.precio !== existing.precio) {
+        // Precio (comparación numérica estricta para evitar falsos positivos)
+        const incPrice = parseNumericPrice(incoming.precio);
+        const existPrice = parseNumericPrice(existing.precio);
+        if (incoming.precio !== undefined && incPrice > 0 && existPrice > 0 && incPrice !== existPrice) {
           cambiosPrecioCount++;
           changes.push({
             campo: 'precio',
             etiqueta: 'Precio de venta',
-            valorAnterior: existing.precio,
-            valorNuevo: incoming.precio,
+            valorAnterior: existPrice,
+            valorNuevo: incPrice,
           });
         }
 
         // Kilometraje (con normalización numérica estricta)
         const incKm = normalizeMileage(incoming.kilometraje) ?? 0;
         const existKm = normalizeMileage(existing.kilometraje) ?? 0;
-        if (incoming.kilometraje !== undefined && incKm !== existKm) {
+        if (incoming.kilometraje !== undefined && incKm > 0 && existKm > 0 && incKm !== existKm) {
           changes.push({
             campo: 'kilometraje',
             etiqueta: 'Kilometraje',
@@ -1709,8 +1737,11 @@ export class PdfService {
           });
         }
 
-        // Marca (corrige registros previos con "Autonet")
-        if (incoming.marca && (incoming.marca !== existing.marca || existing.marca.toLowerCase() === 'autonet')) {
+        // Marca: normalizar mayúsculas/espacios. Solo contar si difiere comercialmente o si corregimos "Autonet"
+        const incMarcaNorm = normalizeTextForComparison(incoming.marca);
+        const existMarcaNorm = normalizeTextForComparison(existing.marca);
+        const isPrevCorruptMarca = existMarcaNorm === 'autonet' || !existMarcaNorm;
+        if (incoming.marca && (isPrevCorruptMarca || incMarcaNorm !== existMarcaNorm)) {
           changes.push({
             campo: 'marca',
             etiqueta: 'Marca',
@@ -1719,8 +1750,11 @@ export class PdfService {
           });
         }
 
-        // Modelo (corrige registros previos con "P" o prefijos desplazados)
-        if (incoming.modelo && (incoming.modelo !== existing.modelo || existing.modelo === 'P' || existing.modelo.startsWith('-'))) {
+        // Modelo: normalizar texto. Corrige "P", prefijos desplazados "-" o si difiere realmente
+        const incModeloNorm = normalizeTextForComparison(incoming.modelo);
+        const existModeloNorm = normalizeTextForComparison(existing.modelo);
+        const isPrevCorruptModelo = existing.modelo === 'P' || existing.modelo?.startsWith('-') || existModeloNorm === 'modelo';
+        if (incoming.modelo && (isPrevCorruptModelo || incModeloNorm !== existModeloNorm)) {
           changes.push({
             campo: 'modelo',
             etiqueta: 'Modelo',
@@ -1729,18 +1763,25 @@ export class PdfService {
           });
         }
 
-        // Versión (corrige prefijos residuales)
-        if (incoming.version && (incoming.version !== existing.version || existing.version.startsWith('-'))) {
+        // Versión: normalizar versión limpia. No alertar si solo difieren mayúsculas o espacios
+        const incVerClean = cleanVersion(incoming.version || '');
+        const existVerClean = cleanVersion(existing.version || '');
+        const incVerNorm = normalizeTextForComparison(incVerClean);
+        const existVerNorm = normalizeTextForComparison(existVerClean);
+        const isPrevCorruptVer = existing.version?.startsWith('-') || existVerNorm === 'estandar';
+        if (incVerClean && (isPrevCorruptVer || incVerNorm !== existVerNorm)) {
           changes.push({
             campo: 'version',
             etiqueta: 'Versión',
             valorAnterior: existing.version,
-            valorNuevo: incoming.version,
+            valorNuevo: incVerClean,
           });
         }
 
-        // Color
-        if (incoming.color && incoming.color !== existing.color && incoming.color !== 'Consultar') {
+        // Color: normalizar mayúsculas/espacios (ej: GRIS vs Gris no es cambio comercial)
+        const incColorNorm = normalizeTextForComparison(incoming.color);
+        const existColorNorm = normalizeTextForComparison(existing.color);
+        if (incoming.color && incColorNorm !== 'consultar' && incColorNorm !== 'a confirmar' && incColorNorm !== existColorNorm) {
           changes.push({
             campo: 'color',
             etiqueta: 'Color',
@@ -1750,7 +1791,9 @@ export class PdfService {
         }
 
         // Ubicación / Situación operativa (Ub)
-        if (incoming.ubCode && incoming.ubCode !== (existing.ubCode || existing.ubicacion)) {
+        const incUbNorm = normalizeTextForComparison(incoming.ubCode);
+        const existUbNorm = normalizeTextForComparison(existing.ubCode || existing.ubicacion);
+        if (incoming.ubCode && incUbNorm !== existUbNorm) {
           changes.push({
             campo: 'ubCode',
             etiqueta: 'Ubicación (Ub)',
@@ -1760,12 +1803,24 @@ export class PdfService {
         }
 
         // Empresa / Sociedad comercial
-        if (incoming.empresa && incoming.empresa !== existing.empresa) {
+        const incEmpNorm = normalizeTextForComparison(incoming.empresa);
+        const existEmpNorm = normalizeTextForComparison(existing.empresa);
+        if (incoming.empresa && incEmpNorm !== existEmpNorm) {
           changes.push({
             campo: 'empresa',
             etiqueta: 'Empresa',
             valorAnterior: existing.empresa,
             valorNuevo: incoming.empresa,
+          });
+        }
+
+        // Año (comparación numérica estricta)
+        if (incoming.anio && existing.anio && Number(incoming.anio) !== Number(existing.anio)) {
+          changes.push({
+            campo: 'anio',
+            etiqueta: 'Año',
+            valorAnterior: existing.anio,
+            valorNuevo: incoming.anio,
           });
         }
 
@@ -1812,9 +1867,14 @@ export class PdfService {
       }
     });
 
-    // 2. Analizar vehículos del stock actual que NO vinieron en la nueva lista
+    // 2. Analizar vehículos del stock activo actual que NO vinieron en la nueva lista
     let noAparecenCount = 0;
     currentStock.forEach((existing) => {
+      // Omitir vehículos que ya estuvieran en histórico o fuera de stock previamente
+      if (existing.isHistorical || existing.estado === 'fuera_de_stock') {
+        return;
+      }
+
       const key = generateVehicleKey(existing);
       if (!key) return; // Si era un registro corrupto sin patente válida, no computar como baja legítima
 
@@ -1827,8 +1887,10 @@ export class PdfService {
           vehiculoExistente: existing,
           advertenciaEstado:
             existing.estado === 'Vendido'
-              ? 'Ya estaba marcado como Vendido.'
-              : 'No figura en la nueva lista de Autonet. Podría haber sido vendido o retirado.',
+              ? 'Ya estaba marcado como Vendido. Se preserva la venta en el historial.'
+              : existing.estado === 'Reservado'
+              ? 'Estaba Reservado. Pasará a historial conservando el estado de reserva.'
+              : 'No figura en la nueva lista de Autonet. Pasará automáticamente a Fuera de Stock (Historial).',
         });
       }
     });

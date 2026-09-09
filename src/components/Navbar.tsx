@@ -9,16 +9,18 @@ import {
   CheckCircle2, 
   Menu, 
   X,
-  Sparkles
+  Sparkles,
+  UserCheck
 } from 'lucide-react';
 
-export type NavTab = 'stock' | 'actualizar' | 'historial' | 'cotizaciones' | 'presupuestos' | 'configuracion';
+export type NavTab = 'stock' | 'ventas' | 'actualizar' | 'historial' | 'cotizaciones' | 'presupuestos' | 'configuracion';
 
 interface NavbarProps {
   currentTab: NavTab;
   onSelectTab: (tab: NavTab) => void;
   availableCount: number;
   totalCount: number;
+  mySalesCount?: number;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -26,6 +28,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onSelectTab,
   availableCount,
   totalCount,
+  mySalesCount = 0,
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
 
@@ -75,6 +78,24 @@ export const Navbar: React.FC<NavbarProps> = ({
               }`}>
                 {availableCount} disp.
               </span>
+            </button>
+
+            <button
+              id="nav-tab-ventas"
+              onClick={() => handleTabClick('ventas')}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                currentTab === 'ventas'
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              <UserCheck className="w-4 h-4 text-emerald-400" />
+              <span>Mis Ventas</span>
+              {mySalesCount > 0 && (
+                <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-emerald-700/80 text-white">
+                  {mySalesCount}
+                </span>
+              )}
             </button>
 
             <button
@@ -187,6 +208,23 @@ export const Navbar: React.FC<NavbarProps> = ({
             <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold">
               {availableCount} disp.
             </span>
+          </button>
+
+          <button
+            onClick={() => handleTabClick('ventas')}
+            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium ${
+              currentTab === 'ventas' ? 'bg-emerald-600 text-white' : 'text-slate-300 hover:bg-slate-800'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <UserCheck className="w-4 h-4 text-emerald-400" />
+              <span>Mis Ventas (Control Comercial)</span>
+            </div>
+            {mySalesCount > 0 && (
+              <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-700 text-white font-bold">
+                {mySalesCount}
+              </span>
+            )}
           </button>
 
           <button

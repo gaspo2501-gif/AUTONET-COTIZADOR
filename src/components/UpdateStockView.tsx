@@ -175,7 +175,7 @@ export const UpdateStockView: React.FC<UpdateStockViewProps> = ({
 
   const handleConfirmUpdate = () => {
     if (!diffResult) return;
-    stockService.applyBatchUpdate(diffResult, missingActions);
+    stockService.applyBatchUpdate(diffResult);
     setAppliedSuccess(true);
     setTimeout(() => {
       onUpdateCompleted(diffResult.archivoNombre);
@@ -653,42 +653,91 @@ export const UpdateStockView: React.FC<UpdateStockViewProps> = ({
             </div>
           )}
           
-          {/* Métricas de la Actualización */}
+          {/* Métricas de la Actualización (interactivas como filtros rápidos) */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-            <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs">
-              <span className="text-xs font-semibold text-slate-500 block mb-1">Encontrados</span>
-              <span className="text-2xl font-black text-slate-900 font-mono">
-                {diffResult.totalEncontrados}
+            <button
+              type="button"
+              id="filter-card-todos"
+              onClick={() => setFilterDiffType('todos')}
+              className={`rounded-xl p-4 border text-left transition-all cursor-pointer ${
+                filterDiffType === 'todos'
+                  ? 'bg-slate-900 text-white border-slate-900 shadow-md ring-2 ring-slate-400'
+                  : 'bg-white hover:bg-slate-50 border-slate-200 shadow-xs'
+              }`}
+            >
+              <span className={`text-xs font-semibold block mb-1 ${filterDiffType === 'todos' ? 'text-slate-300' : 'text-slate-500'}`}>
+                Todos
               </span>
-            </div>
+              <span className={`text-2xl font-black font-mono ${filterDiffType === 'todos' ? 'text-white' : 'text-slate-900'}`}>
+                {diffResult.items.length}
+              </span>
+            </button>
 
-            <div className="bg-emerald-50 rounded-xl p-4 border border-emerald-200 shadow-xs">
-              <span className="text-xs font-semibold text-emerald-800 block mb-1">Nuevos</span>
-              <span className="text-2xl font-black text-emerald-700 font-mono">
+            <button
+              type="button"
+              id="filter-card-nuevos"
+              onClick={() => setFilterDiffType('nuevos')}
+              className={`rounded-xl p-4 border text-left transition-all cursor-pointer ${
+                filterDiffType === 'nuevos'
+                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-md ring-2 ring-emerald-300'
+                  : 'bg-emerald-50 hover:bg-emerald-100/70 border-emerald-200 shadow-xs'
+              }`}
+            >
+              <span className={`text-xs font-semibold block mb-1 ${filterDiffType === 'nuevos' ? 'text-emerald-100' : 'text-emerald-800'}`}>
+                Nuevos
+              </span>
+              <span className={`text-2xl font-black font-mono ${filterDiffType === 'nuevos' ? 'text-white' : 'text-emerald-700'}`}>
                 +{diffResult.nuevos}
               </span>
-            </div>
+            </button>
 
-            <div className="bg-blue-50 rounded-xl p-4 border border-blue-200 shadow-xs">
-              <span className="text-xs font-semibold text-blue-800 block mb-1">Modificados</span>
-              <span className="text-2xl font-black text-blue-700 font-mono">
+            <button
+              type="button"
+              id="filter-card-modificados"
+              onClick={() => setFilterDiffType('modificados')}
+              className={`rounded-xl p-4 border text-left transition-all cursor-pointer ${
+                filterDiffType === 'modificados'
+                  ? 'bg-blue-600 text-white border-blue-600 shadow-md ring-2 ring-blue-300'
+                  : 'bg-blue-50 hover:bg-blue-100/70 border-blue-200 shadow-xs'
+              }`}
+            >
+              <span className={`text-xs font-semibold block mb-1 ${filterDiffType === 'modificados' ? 'text-blue-100' : 'text-blue-800'}`}>
+                Modificados
+              </span>
+              <span className={`text-2xl font-black font-mono ${filterDiffType === 'modificados' ? 'text-white' : 'text-blue-700'}`}>
                 {diffResult.modificados}
               </span>
-            </div>
+            </button>
 
-            <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 shadow-xs">
+            <button
+              type="button"
+              id="filter-card-sincambios"
+              onClick={() => setFilterDiffType('todos')}
+              className="bg-slate-50 rounded-xl p-4 border border-slate-200 shadow-xs text-left"
+            >
               <span className="text-xs font-semibold text-slate-600 block mb-1">Sin Cambios</span>
               <span className="text-2xl font-black text-slate-700 font-mono">
                 {diffResult.sinCambios}
               </span>
-            </div>
+            </button>
 
-            <div className="bg-amber-50 rounded-xl p-4 border border-amber-200 shadow-xs">
-              <span className="text-xs font-semibold text-amber-800 block mb-1">Ya no figuran</span>
-              <span className="text-2xl font-black text-amber-700 font-mono">
+            <button
+              type="button"
+              id="filter-card-noaparecen"
+              onClick={() => setFilterDiffType('no_aparecen')}
+              className={`rounded-xl p-4 border text-left transition-all cursor-pointer ${
+                filterDiffType === 'no_aparecen'
+                  ? 'bg-amber-600 text-white border-amber-600 shadow-md ring-2 ring-amber-300'
+                  : 'bg-amber-50 hover:bg-amber-100/70 border-amber-200 shadow-xs'
+              }`}
+            >
+              <span className={`text-xs font-semibold block mb-1 ${filterDiffType === 'no_aparecen' ? 'text-amber-100' : 'text-amber-800'}`}>
+                Ya no figuran
+              </span>
+              <span className={`text-2xl font-black font-mono ${filterDiffType === 'no_aparecen' ? 'text-white' : 'text-amber-700'}`}>
                 {diffResult.noAparecen}
               </span>
-            </div>
+            </button>
 
             <div className="bg-violet-50 rounded-xl p-4 border border-violet-200 shadow-xs">
               <span className="text-xs font-semibold text-violet-800 block mb-1">Cambios Precio</span>
@@ -703,8 +752,9 @@ export const UpdateStockView: React.FC<UpdateStockViewProps> = ({
             {/* Filtros de la tabla */}
             <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto">
               <button
+                id="btn-filter-diff-todos"
                 onClick={() => setFilterDiffType('todos')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
                   filterDiffType === 'todos'
                     ? 'bg-slate-900 text-white'
                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
@@ -714,8 +764,9 @@ export const UpdateStockView: React.FC<UpdateStockViewProps> = ({
               </button>
 
               <button
+                id="btn-filter-diff-nuevos"
                 onClick={() => setFilterDiffType('nuevos')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
                   filterDiffType === 'nuevos'
                     ? 'bg-emerald-600 text-white'
                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
@@ -725,8 +776,9 @@ export const UpdateStockView: React.FC<UpdateStockViewProps> = ({
               </button>
 
               <button
+                id="btn-filter-diff-modificados"
                 onClick={() => setFilterDiffType('modificados')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
                   filterDiffType === 'modificados'
                     ? 'bg-blue-600 text-white'
                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
@@ -736,8 +788,9 @@ export const UpdateStockView: React.FC<UpdateStockViewProps> = ({
               </button>
 
               <button
+                id="btn-filter-diff-noaparecen"
                 onClick={() => setFilterDiffType('no_aparecen')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
                   filterDiffType === 'no_aparecen'
                     ? 'bg-amber-600 text-white'
                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
@@ -894,28 +947,16 @@ export const UpdateStockView: React.FC<UpdateStockViewProps> = ({
                         {item.tipo === 'no_aparece' && (
                           <div>
                             {item.vehiculoExistente?.estado === 'Vendido' ? (
-                              <div className="text-xs font-semibold text-emerald-800 bg-emerald-50 px-2 py-1 rounded border border-emerald-200">
-                                Conservada como Vendido (Regla especial)
+                              <div className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                                <span>Vendido (Historial)</span>
+                              </div>
+                            ) : item.vehiculoExistente?.estado === 'Reservado' ? (
+                              <div className="inline-flex items-center gap-1 text-xs font-semibold text-amber-800 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200">
+                                <span>Reservado (Historial)</span>
                               </div>
                             ) : (
-                              <div className="flex items-center gap-2">
-                                <label className="text-slate-600 font-medium">Decisión:</label>
-                                <select
-                                  value={missingActions[item.patente.replace(/\s+/g, '').toUpperCase()] || 'mantener'}
-                                  onChange={(e) => {
-                                    const normKey = item.patente.replace(/\s+/g, '').toUpperCase();
-                                    setMissingActions((prev) => ({
-                                      ...prev,
-                                      [normKey]: e.target.value as any,
-                                    }));
-                                  }}
-                                  className="text-xs font-semibold bg-white border border-slate-300 rounded px-2 py-1 outline-hidden focus:border-blue-500"
-                                >
-                                  <option value="mantener">Mantener en el stock</option>
-                                  <option value="vendido">Marcar como Vendido</option>
-                                  <option value="reservado">Marcar como Reservado</option>
-                                  <option value="eliminar">Eliminar del stock</option>
-                                </select>
+                              <div className="inline-flex items-center gap-1 text-xs font-semibold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
+                                <span>Pasa a Fuera de Stock</span>
                               </div>
                             )}
                           </div>

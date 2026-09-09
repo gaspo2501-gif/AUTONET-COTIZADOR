@@ -25,6 +25,8 @@ import { VehicleQuoteModal } from './components/VehicleQuoteModal';
 import { UpdateStockView } from './components/UpdateStockView';
 import { UpdateHistoryView } from './components/UpdateHistoryView';
 import { FutureModulesView } from './components/FutureModulesView';
+import { MarkAsSoldModal } from './components/MarkAsSoldModal';
+import { MySalesView } from './components/MySalesView';
 
 const DEFAULT_FILTERS: StockFilters = {
   searchQuery: '',
@@ -39,7 +41,8 @@ const DEFAULT_FILTERS: StockFilters = {
   combustible: '',
   caja: '',
   traccion: '',
-  estado: 'Disponible', // Por defecto muestra disponibles
+  estado: 'Todos',
+  estadoComercial: 'activo', // Por defecto muestra únicamente stock activo (Disponible + Reservado)
 };
 
 export default function App() {
@@ -50,6 +53,7 @@ export default function App() {
   const [filters, setFilters] = useState<StockFilters>(DEFAULT_FILTERS);
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
   const [quoteVehicle, setQuoteVehicle] = useState<Vehicle | null>(null);
+  const [soldModalVehicle, setSoldModalVehicle] = useState<Vehicle | null>(null);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'info' | 'warn' } | null>(null);
 
   // Suscripción reactiva al stockService
@@ -66,9 +70,14 @@ export default function App() {
         const foundQuote = updatedList.find((v) => v.id === quoteVehicle.id);
         if (foundQuote) setQuoteVehicle(foundQuote);
       }
+      // Si el vehículo en modal de venta está abierto, actualizar sus datos
+      if (soldModalVehicle) {
+        const foundSold = updatedList.find((v) => v.id === soldModalVehicle.id);
+        if (foundSold) setSoldModalVehicle(foundSold);
+      }
     });
     return unsubscribe;
-  }, [selectedVehicle, quoteVehicle]);
+  }, [selectedVehicle, quoteVehicle, soldModalVehicle]);
 
   const showToast = (text: string, type: 'success' | 'info' | 'warn' = 'success') => {
     setToastMessage({ text, type });
@@ -79,6 +88,35 @@ export default function App() {
 
   const handleOpenQuote = (vehicle: Vehicle) => {
     setQuoteVehicle(vehicle);
+  };
+
+  const handleOpenMarkAsSold = (vehicle: Vehicle) => {
+    setSoldModalVehicle(vehicle);
+  };
+
+  const handleConfirmSale = (options: {
+    saleOwner: 'self' | 'other';
+    soldAt?: string;
+    soldPrice?: number;
+    observaciones?: string;
+  }) => {
+    if (!soldModalVehicle) return;
+    const updated = stockService.markVehicleAsSold(soldModalVehicle.id, options);
+    if (updated) {
+      showToast(
+        `Unidad ${updated.patente} (${updated.marca} ${updated.modelo}) registrada como vendida (${
+          options.saleOwner === 'self' ? 'Venta propia' : 'Otro vendedor'
+        }).`,
+        'success'
+      );
+    }
+  };
+
+  const handleRevertSale = (id: string) => {
+    const updated = stockService.revertVehicleToAvailable(id);
+    if (updated) {
+      showToast(`Unidad ${updated.patente} reactivada como DISPONIBLE en stock.`, 'success');
+    }
   };
 
   const handleUpdateVehicleTableValue = (
@@ -100,18 +138,25 @@ export default function App() {
 
   // Manejo de cambio de estado manual (Vendido / Disponible / Reservado)
   const handleStatusChange = (id: string, newStatus: VehicleStatus) => {
+    if (newStatus === 'Vendido') {
+      const v = vehicles.find((item) => item.id === id);
+      if (v) {
+        setSoldModalVehicle(v);
+        return;
+      }
+    }
+
+    if (newStatus === 'Disponible') {
+      const updated = stockService.revertVehicleToAvailable(id);
+      if (updated) {
+        showToast(`Unidad ${updated.patente} marcada nuevamente como DISPONIBLE.`, 'success');
+      }
+      return;
+    }
+
     const updated = stockService.updateVehicleStatus(id, newStatus, true);
     if (updated) {
-      if (newStatus === 'Vendido') {
-        showToast(
-          `Unidad ${updated.patente} (${updated.marca} ${updated.modelo}) marcada como VENDIDA. Se conservará este estado en futuras cargas de PDF.`,
-          'info'
-        );
-      } else if (newStatus === 'Disponible') {
-        showToast(`Unidad ${updated.patente} marcada nuevamente como DISPONIBLE.`, 'success');
-      } else {
-        showToast(`Unidad ${updated.patente} marcada como RESERVADA.`, 'info');
-      }
+      showToast(`Unidad ${updated.patente} marcada como RESERVADA.`, 'info');
     }
   };
 
@@ -181,10 +226,24 @@ export default function App() {
         if (vEmp !== filters.empresa.trim().toUpperCase()) return false;
       }
 
-      // Estado
-      if (filters.estado !== 'Todos') {
-        if (v.estado !== filters.estado) return false;
+      // Filtro de Estado Comercial prioritario
+      const commercial = filters.estadoComercial || 'activo';
+      if (commercial === 'activo') {
+        // Stock Activo: únicamente unidades no históricas y disponibles o reservadas
+        if (v.isHistorical || v.estado === 'fuera_de_stock') return false;
+        if (v.estado !== 'Disponible' && v.estado !== 'Reservado') return false;
+      } else if (commercial === 'Disponible') {
+        if (v.isHistorical || v.estado !== 'Disponible') return false;
+      } else if (commercial === 'Reservado') {
+        if (v.isHistorical || v.estado !== 'Reservado') return false;
+      } else if (commercial === 'vendidas_propias') {
+        if (v.estado !== 'Vendido' || v.saleOwner !== 'self') return false;
+      } else if (commercial === 'vendidas_otros') {
+        if (v.estado !== 'Vendido' || v.saleOwner !== 'other') return false;
+      } else if (commercial === 'fuera_de_stock') {
+        if (!v.isHistorical && v.estado !== 'fuera_de_stock') return false;
       }
+      // 'todos': no excluye por estado comercial
 
       return true;
     });
@@ -201,6 +260,7 @@ export default function App() {
           Disponible: 1,
           Reservado: 2,
           Vendido: 3,
+          fuera_de_stock: 4,
         };
         if (orderMap[a.estado] !== orderMap[b.estado]) {
           return orderMap[a.estado] - orderMap[b.estado];
@@ -220,15 +280,23 @@ export default function App() {
 
   // Contadores para métricas
   const availableCount = useMemo(() => {
-    return vehicles.filter((v) => v.estado === 'Disponible').length;
+    return vehicles.filter((v) => !v.isHistorical && v.estado === 'Disponible').length;
   }, [vehicles]);
 
   const reservedCount = useMemo(() => {
-    return vehicles.filter((v) => v.estado === 'Reservado').length;
+    return vehicles.filter((v) => !v.isHistorical && v.estado === 'Reservado').length;
   }, [vehicles]);
 
   const soldCount = useMemo(() => {
     return vehicles.filter((v) => v.estado === 'Vendido').length;
+  }, [vehicles]);
+
+  const mySalesCount = useMemo(() => {
+    return vehicles.filter((v) => v.estado === 'Vendido' && v.saleOwner === 'self').length;
+  }, [vehicles]);
+
+  const activeCount = useMemo(() => {
+    return vehicles.filter((v) => !v.isHistorical && (v.estado === 'Disponible' || v.estado === 'Reservado')).length;
   }, [vehicles]);
 
   return (
@@ -252,6 +320,7 @@ export default function App() {
         onSelectTab={setCurrentTab}
         availableCount={availableCount}
         totalCount={vehicles.length}
+        mySalesCount={mySalesCount}
       />
 
       {/* Contenido Principal */}
@@ -269,7 +338,10 @@ export default function App() {
                     Stock de Usados
                   </h1>
                   <span className="px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800 text-xs font-bold">
-                    {vehicles.length} totales
+                    {activeCount} activos
+                  </span>
+                  <span className="text-xs text-slate-400">
+                    ({vehicles.length} en base de datos)
                   </span>
                 </div>
                 <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
@@ -278,11 +350,24 @@ export default function App() {
               </div>
 
               {/* Indicadores rápidos de stock */}
-              <div className="flex items-center gap-2 sm:gap-4 overflow-x-auto pb-1 sm:pb-0">
+              <div className="flex items-center gap-2 sm:gap-3 overflow-x-auto pb-1 sm:pb-0">
                 <button
-                  onClick={() => setFilters({ ...filters, estado: 'Disponible' })}
+                  onClick={() => setFilters({ ...filters, estadoComercial: 'activo' })}
                   className={`px-3 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 transition-colors ${
-                    filters.estado === 'Disponible'
+                    filters.estadoComercial === 'activo'
+                      ? 'bg-blue-50 text-blue-800 border-blue-300 ring-2 ring-blue-100'
+                      : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                  }`}
+                  title="Mostrar únicamente unidades activas presentes en stock"
+                >
+                  <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                  <span>{activeCount} Activos</span>
+                </button>
+
+                <button
+                  onClick={() => setFilters({ ...filters, estadoComercial: 'Disponible' })}
+                  className={`px-3 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 transition-colors ${
+                    filters.estadoComercial === 'Disponible'
                       ? 'bg-emerald-50 text-emerald-800 border-emerald-300 ring-2 ring-emerald-100'
                       : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
                   }`}
@@ -292,9 +377,9 @@ export default function App() {
                 </button>
 
                 <button
-                  onClick={() => setFilters({ ...filters, estado: 'Reservado' })}
+                  onClick={() => setFilters({ ...filters, estadoComercial: 'Reservado' })}
                   className={`px-3 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 transition-colors ${
-                    filters.estado === 'Reservado'
+                    filters.estadoComercial === 'Reservado'
                       ? 'bg-amber-50 text-amber-800 border-amber-300 ring-2 ring-amber-100'
                       : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
                   }`}
@@ -304,15 +389,16 @@ export default function App() {
                 </button>
 
                 <button
-                  onClick={() => setFilters({ ...filters, estado: 'Vendido' })}
+                  onClick={() => setFilters({ ...filters, estadoComercial: 'vendidas_propias' })}
                   className={`px-3 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 transition-colors ${
-                    filters.estado === 'Vendido'
-                      ? 'bg-rose-50 text-rose-800 border-rose-300 ring-2 ring-rose-100'
+                    filters.estadoComercial === 'vendidas_propias'
+                      ? 'bg-emerald-50 text-emerald-900 border-emerald-400 ring-2 ring-emerald-100'
                       : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
                   }`}
+                  title="Unidades vendidas registradas como propias"
                 >
-                  <span className="w-2 h-2 rounded-full bg-rose-500"></span>
-                  <span>{soldCount} Vendidos</span>
+                  <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
+                  <span>{mySalesCount} Mis Ventas</span>
                 </button>
               </div>
             </div>
@@ -329,10 +415,10 @@ export default function App() {
             {/* Barra de Herramientas: Conteo de resultados, Selector de vista (Tarjetas/Tabla) y Orden */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white px-4 py-3 rounded-xl border border-slate-200/90 shadow-xs">
               <div className="text-xs sm:text-sm font-semibold text-slate-700">
-                Mostrando <strong className="text-blue-700">{sortedVehicles.length}</strong> de {vehicles.length} unidades
-                {filters.estado !== 'Todos' && (
+                Mostrando <strong className="text-blue-700">{sortedVehicles.length}</strong> resultados
+                {filters.estadoComercial && filters.estadoComercial !== 'activo' && (
                   <span className="text-slate-400 font-normal ml-1">
-                    (Filtro estado: <em>{filters.estado}</em>)
+                    (Filtro: <em>{filters.estadoComercial}</em>)
                   </span>
                 )}
               </div>
@@ -413,6 +499,7 @@ export default function App() {
                     onSelect={setSelectedVehicle}
                     onStatusChange={handleStatusChange}
                     onQuote={handleOpenQuote}
+                    onOpenMarkAsSold={handleOpenMarkAsSold}
                   />
                 ))}
               </div>
@@ -422,12 +509,23 @@ export default function App() {
                 onSelect={setSelectedVehicle}
                 onStatusChange={handleStatusChange}
                 onQuote={handleOpenQuote}
+                onOpenMarkAsSold={handleOpenMarkAsSold}
               />
             )}
           </div>
         )}
 
-        {/* VISTA 2: ACTUALIZAR STOCK (IMPORTAR PDF) */}
+        {/* VISTA 2: MIS VENTAS */}
+        {currentTab === 'ventas' && (
+          <MySalesView
+            vehicles={vehicles}
+            onSelectVehicle={setSelectedVehicle}
+            onOpenMarkAsSold={handleOpenMarkAsSold}
+            onNavigateToStock={() => setCurrentTab('stock')}
+          />
+        )}
+
+        {/* VISTA 3: ACTUALIZAR STOCK (IMPORTAR PDF) */}
         {currentTab === 'actualizar' && (
           <UpdateStockView
             currentStock={vehicles}
@@ -439,12 +537,12 @@ export default function App() {
           />
         )}
 
-        {/* VISTA 3: HISTORIAL DE ACTUALIZACIONES */}
+        {/* VISTA 4: HISTORIAL DE ACTUALIZACIONES */}
         {currentTab === 'historial' && (
           <UpdateHistoryView />
         )}
 
-        {/* VISTAS 4, 5, 6: MÓDULOS FUTUROS Y CONFIGURACIÓN */}
+        {/* VISTAS 5, 6, 7: MÓDULOS FUTUROS Y CONFIGURACIÓN */}
         {(currentTab === 'cotizaciones' || currentTab === 'presupuestos' || currentTab === 'configuracion') && (
           <FutureModulesView
             type={currentTab}
@@ -463,6 +561,7 @@ export default function App() {
           onClose={() => setSelectedVehicle(null)}
           onStatusChange={handleStatusChange}
           onOpenQuote={handleOpenQuote}
+          onOpenMarkAsSold={handleOpenMarkAsSold}
           onUpdateVehicleTableValue={handleUpdateVehicleTableValue}
         />
       )}
@@ -473,6 +572,16 @@ export default function App() {
           vehicle={quoteVehicle}
           onClose={() => setQuoteVehicle(null)}
           onUpdateVehicleTableValue={handleUpdateVehicleTableValue}
+        />
+      )}
+
+      {/* Modal para Registrar o Gestionar Venta */}
+      {soldModalVehicle && (
+        <MarkAsSoldModal
+          vehicle={soldModalVehicle}
+          onClose={() => setSoldModalVehicle(null)}
+          onConfirm={handleConfirmSale}
+          onRevert={handleRevertSale}
         />
       )}
     </div>

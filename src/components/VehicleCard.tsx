@@ -21,6 +21,7 @@ interface VehicleCardProps {
   onSelect: (vehicle: Vehicle) => void;
   onStatusChange: (id: string, newStatus: 'Disponible' | 'Reservado' | 'Vendido') => void;
   onQuote?: (vehicle: Vehicle) => void;
+  onOpenMarkAsSold?: (vehicle: Vehicle) => void;
 }
 
 export const VehicleCard: React.FC<VehicleCardProps> = ({
@@ -28,8 +29,17 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
   onSelect,
   onStatusChange,
   onQuote,
+  onOpenMarkAsSold,
 }) => {
   const getStatusBadge = () => {
+    if (vehicle.isHistorical || vehicle.estado === 'fuera_de_stock') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-slate-700 text-white shadow-xs">
+          Fuera de stock
+        </span>
+      );
+    }
+
     switch (vehicle.estado) {
       case 'Disponible':
         return (
@@ -46,10 +56,26 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
           </span>
         );
       case 'Vendido':
+        if (vehicle.saleOwner === 'self') {
+          return (
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-600 text-white shadow-xs">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              Vendida por mí
+            </span>
+          );
+        }
+        if (vehicle.saleOwner === 'other') {
+          return (
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-blue-600 text-white shadow-xs">
+              <XCircle className="w-3.5 h-3.5" />
+              Vendido (otro)
+            </span>
+          );
+        }
         return (
           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-rose-600 text-white shadow-xs">
             <XCircle className="w-3.5 h-3.5" />
-            Vendido {vehicle.estadoModificadoManualmente ? '(Manual)' : ''}
+            Vendido
           </span>
         );
       default:
@@ -206,21 +232,33 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
         {vehicle.estado === 'Disponible' ? (
           <button
             id={`marcar-vendido-${vehicle.id}`}
-            onClick={() => onStatusChange(vehicle.id, 'Vendido')}
-            title="Marcar como Vendido manualmente (evita que el PDF lo reactive)"
+            onClick={() => onOpenMarkAsSold ? onOpenMarkAsSold(vehicle) : onStatusChange(vehicle.id, 'Vendido')}
+            title="Registrar venta (especificar si es propia o de otro asesor)"
             className="py-2 px-2.5 rounded-lg border border-slate-200 text-slate-600 hover:text-rose-600 hover:bg-rose-50 hover:border-rose-200 text-xs font-semibold transition-colors"
           >
             Vendido
           </button>
         ) : vehicle.estado === 'Vendido' ? (
-          <button
-            id={`marcar-disponible-${vehicle.id}`}
-            onClick={() => onStatusChange(vehicle.id, 'Disponible')}
-            title="Reactivar a Disponible"
-            className="py-2 px-2.5 rounded-lg border border-slate-200 text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 hover:border-emerald-200 text-xs font-semibold transition-colors"
-          >
-            Disponible
-          </button>
+          <div className="flex items-center gap-1">
+            {onOpenMarkAsSold && (
+              <button
+                id={`gestionar-venta-${vehicle.id}`}
+                onClick={() => onOpenMarkAsSold(vehicle)}
+                title="Modificar datos de la venta"
+                className="py-2 px-2 rounded-lg bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 text-xs font-semibold transition-colors"
+              >
+                Venta
+              </button>
+            )}
+            <button
+              id={`marcar-disponible-${vehicle.id}`}
+              onClick={() => onStatusChange(vehicle.id, 'Disponible')}
+              title="Reactivar a Disponible"
+              className="py-2 px-2 rounded-lg border border-slate-200 text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 hover:border-emerald-200 text-xs font-semibold transition-colors"
+            >
+              Reactivar
+            </button>
+          </div>
         ) : (
           <button
             id={`marcar-disponible-${vehicle.id}`}

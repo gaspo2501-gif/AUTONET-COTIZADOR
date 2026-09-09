@@ -63,6 +63,47 @@ export const StockFiltersBar: React.FC<StockFiltersBarProps> = ({
     return Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
   }, [availableVehicles]);
 
+  // Conteos para pestañas comerciales
+  const commercialCounts = React.useMemo(() => {
+    let activo = 0;
+    let disponible = 0;
+    let reservado = 0;
+    let misVentas = 0;
+    let ventasOtros = 0;
+    let fueraStock = 0;
+
+    availableVehicles.forEach((v) => {
+      if (!v.isHistorical && (v.estado === 'Disponible' || v.estado === 'Reservado')) {
+        activo++;
+      }
+      if (!v.isHistorical && v.estado === 'Disponible') {
+        disponible++;
+      }
+      if (v.estado === 'Reservado') {
+        reservado++;
+      }
+      if (v.estado === 'Vendido' && v.saleOwner === 'self') {
+        misVentas++;
+      }
+      if (v.estado === 'Vendido' && v.saleOwner === 'other') {
+        ventasOtros++;
+      }
+      if (v.isHistorical || v.estado === 'fuera_de_stock') {
+        fueraStock++;
+      }
+    });
+
+    return {
+      activo,
+      disponible,
+      reservado,
+      misVentas,
+      ventasOtros,
+      fueraStock,
+      todos: availableVehicles.length,
+    };
+  }, [availableVehicles]);
+
   // Empresas / Sociedades comerciales únicas en el stock
   const empresasDisponibles = React.useMemo(() => {
     const map = new Map<string, number>();
@@ -144,6 +185,104 @@ export const StockFiltersBar: React.FC<StockFiltersBarProps> = ({
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200/80 p-4 mb-6 transition-all">
       
+      {/* Pestañas de Estado Comercial */}
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-2 mb-3 border-b border-slate-100">
+        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-1 hidden sm:inline">
+          Vista:
+        </span>
+        
+        <button
+          type="button"
+          id="tab-comercial-activo"
+          onClick={() => updateFilter('estadoComercial', 'activo')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer ${
+            (filters.estadoComercial || 'activo') === 'activo'
+              ? 'bg-blue-600 text-white shadow-xs'
+              : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+          }`}
+        >
+          Stock Activo ({commercialCounts.activo})
+        </button>
+
+        <button
+          type="button"
+          id="tab-comercial-disponible"
+          onClick={() => updateFilter('estadoComercial', 'Disponible')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer ${
+            filters.estadoComercial === 'Disponible'
+              ? 'bg-emerald-600 text-white shadow-xs'
+              : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+          }`}
+        >
+          Disponibles ({commercialCounts.disponible})
+        </button>
+
+        <button
+          type="button"
+          id="tab-comercial-reservado"
+          onClick={() => updateFilter('estadoComercial', 'Reservado')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer ${
+            filters.estadoComercial === 'Reservado'
+              ? 'bg-amber-600 text-white shadow-xs'
+              : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+          }`}
+        >
+          Reservados ({commercialCounts.reservado})
+        </button>
+
+        <button
+          type="button"
+          id="tab-comercial-mis-ventas"
+          onClick={() => updateFilter('estadoComercial', 'vendidas_propias')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer ${
+            filters.estadoComercial === 'vendidas_propias'
+              ? 'bg-teal-600 text-white shadow-xs'
+              : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+          }`}
+        >
+          Vendidas por mí ({commercialCounts.misVentas})
+        </button>
+
+        <button
+          type="button"
+          id="tab-comercial-ventas-otros"
+          onClick={() => updateFilter('estadoComercial', 'vendidas_otros')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer ${
+            filters.estadoComercial === 'vendidas_otros'
+              ? 'bg-indigo-600 text-white shadow-xs'
+              : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+          }`}
+        >
+          Vendidas por otros ({commercialCounts.ventasOtros})
+        </button>
+
+        <button
+          type="button"
+          id="tab-comercial-fuera-stock"
+          onClick={() => updateFilter('estadoComercial', 'fuera_de_stock')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer ${
+            filters.estadoComercial === 'fuera_de_stock'
+              ? 'bg-slate-800 text-white shadow-xs'
+              : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+          }`}
+        >
+          Fuera de stock ({commercialCounts.fueraStock})
+        </button>
+
+        <button
+          type="button"
+          id="tab-comercial-todos"
+          onClick={() => updateFilter('estadoComercial', 'todos')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer ${
+            filters.estadoComercial === 'todos'
+              ? 'bg-slate-900 text-white shadow-xs'
+              : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+          }`}
+        >
+          Todos ({commercialCounts.todos})
+        </button>
+      </div>
+
       {/* Buscador general superior */}
       <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
         <div className="relative flex-1">
@@ -460,18 +599,21 @@ export const StockFiltersBar: React.FC<StockFiltersBarProps> = ({
 
               <div>
                 <label className="block text-xs font-bold text-slate-600 mb-1">
-                  Estado
+                  Estado Comercial
                 </label>
                 <select
-                  id="filter-estado"
-                  value={filters.estado}
-                  onChange={(e) => updateFilter('estado', e.target.value)}
+                  id="filter-estado-comercial"
+                  value={filters.estadoComercial || 'activo'}
+                  onChange={(e) => updateFilter('estadoComercial', e.target.value)}
                   className="w-full bg-slate-50 text-slate-800 text-sm rounded-lg border border-slate-200 px-2 py-2 outline-none focus:border-blue-500 focus:bg-white font-medium"
                 >
-                  <option value="Disponible">Disponible (Default)</option>
-                  <option value="Reservado">Reservado</option>
-                  <option value="Vendido">Vendido</option>
-                  <option value="Todos">Todos los estados</option>
+                  <option value="activo">Stock Activo (Disp. + Res.)</option>
+                  <option value="Disponible">Solo Disponibles</option>
+                  <option value="Reservado">Solo Reservados</option>
+                  <option value="vendidas_propias">Vendidas por mí</option>
+                  <option value="vendidas_otros">Vendidas por otros</option>
+                  <option value="fuera_de_stock">Fuera de stock (Histórico)</option>
+                  <option value="todos">Todos los registros</option>
                 </select>
               </div>
             </div>

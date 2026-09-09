@@ -25,6 +25,7 @@ interface VehicleDetailModalProps {
   onClose: () => void;
   onStatusChange: (id: string, newStatus: VehicleStatus) => void;
   onOpenQuote?: (vehicle: Vehicle) => void;
+  onOpenMarkAsSold?: (vehicle: Vehicle) => void;
   onUpdateVehicleTableValue?: (vehicleId: string, tableValue: number, province: ProvinceTransfer) => void;
 }
 
@@ -33,6 +34,7 @@ export const VehicleDetailModal: React.FC<VehicleDetailModalProps> = ({
   onClose,
   onStatusChange,
   onOpenQuote,
+  onOpenMarkAsSold,
   onUpdateVehicleTableValue,
 }) => {
   const [isQuoteModalOpen, setIsQuoteModalOpen] = useState(false);
@@ -223,6 +225,51 @@ export const VehicleDetailModal: React.FC<VehicleDetailModalProps> = ({
               </div>
             </div>
 
+            {/* Información comercial de Venta si está Vendido o Fuera de Stock */}
+            {(vehicle.estado === 'Vendido' || vehicle.isHistorical) && (
+              <div className="bg-emerald-50/70 p-4 rounded-xl border border-emerald-200 text-xs space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-emerald-900 uppercase tracking-wider flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    Registro Comercial de la Unidad
+                  </span>
+                  {onOpenMarkAsSold && (
+                    <button
+                      type="button"
+                      onClick={() => onOpenMarkAsSold(vehicle)}
+                      className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] transition-colors shadow-xs"
+                    >
+                      Editar Registro de Venta
+                    </button>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1 text-slate-700">
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">Clasificación:</span>
+                    <strong className="text-slate-800">
+                      {vehicle.saleOwner === 'self'
+                        ? 'Vendida por mí'
+                        : vehicle.saleOwner === 'other'
+                        ? 'Venta de otro asesor'
+                        : vehicle.isHistorical
+                        ? 'Fuera de stock'
+                        : 'Vendido'}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">Fecha de venta:</span>
+                    <strong className="text-slate-800">{vehicle.soldAt ? vehicle.soldAt.slice(0, 10) : (vehicle.fechaSalidaStock?.slice(0, 10) || 'No registrada')}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">Precio de venta:</span>
+                    <strong className="text-emerald-700 font-mono font-bold">
+                      {formatCurrency(vehicle.soldPrice || vehicle.precio)}
+                    </strong>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Observaciones */}
             <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs">
               <span className="font-bold text-slate-800 uppercase tracking-wider block mb-1">
@@ -307,15 +354,26 @@ export const VehicleDetailModal: React.FC<VehicleDetailModalProps> = ({
                 </button>
               )}
 
-              {vehicle.estado !== 'Vendido' && (
+              {vehicle.estado !== 'Vendido' ? (
                 <button
                   type="button"
                   id="modal-btn-marcar-vendido"
-                  onClick={() => onStatusChange(vehicle.id, 'Vendido')}
+                  onClick={() => onOpenMarkAsSold ? onOpenMarkAsSold(vehicle) : onStatusChange(vehicle.id, 'Vendido')}
                   className="px-3 py-2 rounded-xl bg-rose-50 border border-rose-300 text-rose-800 hover:bg-rose-100 text-xs font-bold transition-colors"
                 >
                   MARCAR COMO VENDIDO
                 </button>
+              ) : (
+                onOpenMarkAsSold && (
+                  <button
+                    type="button"
+                    id="modal-btn-editar-venta"
+                    onClick={() => onOpenMarkAsSold(vehicle)}
+                    className="px-3 py-2 rounded-xl bg-blue-50 border border-blue-300 text-blue-800 hover:bg-blue-100 text-xs font-bold transition-colors"
+                  >
+                    GESTIONAR VENTA
+                  </button>
+                )
               )}
 
               <button

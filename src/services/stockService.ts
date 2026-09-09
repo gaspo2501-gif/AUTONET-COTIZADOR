@@ -132,6 +132,18 @@ class StockService {
           }
         }
 
+        // 4. Migración de ventas anteriores (Requerimiento 18):
+        // Unidades ya vendidas sin propietario asignado pasan a 'Venta sin clasificar' (saleOwner = null)
+        if (v.estado === 'Vendido' && v.saleOwner === undefined) {
+          modified = true;
+          return {
+            ...v,
+            saleOwner: null,
+            soldAt: v.soldAt || v.fechaActualizacion || new Date().toISOString().split('T')[0],
+            soldPrice: v.soldPrice ?? v.precio,
+          };
+        }
+
         if (modified) {
           hasSanitizationFix = true;
           return {
@@ -218,16 +230,141 @@ class StockService {
     if (index === -1) return null;
 
     const current = stock[index];
+    const today = new Date().toISOString().split('T')[0];
     const updated: Vehicle = {
       ...current,
       estado: nuevoEstado,
       estadoModificadoManualmente: esManual ? (nuevoEstado === 'Vendido') : current.estadoModificadoManualmente,
+      // Si se pasa a Vendido sin clasificar por este método rápido, asignar venta sin clasificar (null)
+      saleOwner: nuevoEstado === 'Vendido' ? (current.saleOwner ?? null) : current.saleOwner,
+      soldAt: nuevoEstado === 'Vendido' ? (current.soldAt || today) : current.soldAt,
+      soldPrice: nuevoEstado === 'Vendido' ? (current.soldPrice ?? current.precio) : current.soldPrice,
       fechaActualizacion: new Date().toISOString(),
     };
 
     stock[index] = updated;
     this.saveStock(stock);
     return updated;
+  }
+
+  /**
+   * Registra una unidad como vendida indicando si fue venta propia o de otro vendedor.
+   * Guarda fecha de venta, precio de cierre y nota opcional.
+   */
+  public markVehicleAsSold(
+    id: string,
+    options: {
+      saleOwner: 'self' | 'other';
+      soldAt?: string;
+      soldPrice?: number;
+      observaciones?: string;
+    }
+  ): Vehicle | null {
+    const stock = this.getAllVehicles();
+    const index = stock.findIndex((v) => v.id === id);
+    if (index === -1) return null;
+
+    const current = stock[index];
+    const today = new Date().toISOString().split('T')[0];
+    const updated: Vehicle = {
+      ...current,
+      estado: 'Vendido',
+      estadoModificadoManualmente: true,
+      saleOwner: options.saleOwner,
+      soldAt: options.soldAt || current.soldAt || today,
+      soldPrice: options.soldPrice ?? current.soldPrice ?? current.precio,
+      observaciones: options.observaciones
+        ? `${current.observaciones ? current.observaciones + '\n' : ''}[Venta ${options.saleOwner === 'self' ? 'Propia' : 'Otro'}]: ${options.observaciones}`
+        : current.observaciones,
+      fechaActualizacion: new Date().toISOString(),
+    };
+
+    stock[index] = updated;
+    this.saveStock(stock);
+    return updated;
+  }
+
+  /**
+   * Modifica los datos de una venta existente (propietario, fecha, precio).
+   */
+  public updateSaleInfo(
+    id: string,
+    options: {
+      saleOwner: 'self' | 'other' | null;
+      soldAt?: string;
+      soldPrice?: number;
+    }
+  ): Vehicle | null {
+    const stock = this.getAllVehicles();
+    const index = stock.findIndex((v) => v.id === id);
+    if (index === -1) return null;
+
+    const current = stock[index];
+    const updated: Vehicle = {
+      ...current,
+      saleOwner: options.saleOwner,
+      soldAt: options.soldAt ?? current.soldAt,
+      soldPrice: options.soldPrice ?? current.soldPrice,
+      fechaActualizacion: new Date().toISOString(),
+    };
+
+    stock[index] = updated;
+    this.saveStock(stock);
+    return updated;
+  }
+
+  /**
+   * Revierte un vehículo vendido o fuera de stock a Disponible.
+   */
+  public revertVehicleToAvailable(id: string): Vehicle | null {
+    const stock = this.getAllVehicles();
+    const index = stock.findIndex((v) => v.id === id);
+    if (index === -1) return null;
+
+    const current = stock[index];
+    const updated: Vehicle = {
+      ...current,
+      estado: 'Disponible',
+      estadoModificadoManualmente: false,
+      saleOwner: null,
+      soldAt: undefined,
+      soldPrice: undefined,
+      fechaActualizacion: new Date().toISOString(),
+    };
+
+    stock[index] = updated;
+    this.saveStock(stock);
+    return updated;
+  }
+
+  /**
+   * Retorna únicamente los vehículos del stock activo (no históricos y estado Disponible o Reservado).
+   */
+  public getActiveStock(): Vehicle[] {
+    return this.getAllVehicles().filter(
+      (v) => !v.isHistorical && (v.estado === 'Disponible' || v.estado === 'Reservado')
+    );
+  }
+
+  /**
+   * Retorna las ventas propias del asesor (saleOwner === 'self').
+   */
+  public getMySales(): Vehicle[] {
+    return this.getAllVehicles().filter((v) => v.estado === 'Vendido' && v.saleOwner === 'self');
+  }
+
+  /**
+   * Retorna todas las ventas registradas.
+   */
+  public getAllSales(): Vehicle[] {
+    return this.getAllVehicles().filter((v) => v.estado === 'Vendido');
+  }
+
+  /**
+   * Retorna los vehículos que ya no están en stock activo (histórico).
+   */
+  public getOutOfStockVehicles(): Vehicle[] {
+    return this.getAllVehicles().filter((v) => v.isHistorical || v.estado === 'fuera_de_stock');
   }
 
   public updateVehicle(id: string, updates: Partial<Vehicle>): Vehicle | null {
@@ -259,13 +396,11 @@ class StockService {
 
   /**
    * Aplica un lote de actualización confirmado por el asesor comercial.
-   * Respeta la regla de que unidades vendidas manualmente NUNCA se vuelven a disponible automáticamente.
-   * Permite gestionar las unidades que no aparecen en el nuevo PDF (Sección 10).
+   * Regla de Stock Activo Fiel: El stock activo pasa a ser exactamente el del PDF.
+   * Las unidades que ya no figuran pasan automáticamente al registro histórico
+   * (fuera_de_stock / conservando ventas o reservas).
    */
-  public applyBatchUpdate(
-    diff: DiffResult,
-    missingActions?: Record<string, 'mantener' | 'vendido' | 'reservado' | 'eliminar'>
-  ): UpdateHistoryRecord {
+  public applyBatchUpdate(diff: DiffResult): UpdateHistoryRecord {
     const currentStock = this.getAllVehicles();
     const updatedMap = new Map<string, Vehicle>();
 
@@ -291,7 +426,7 @@ class StockService {
       }
 
       if (item.tipo === 'nuevo' && item.vehiculoNuevo) {
-        // Nuevo ingreso detectado en el PDF (sin fotos)
+        // Nuevo ingreso detectado en el PDF (pasa a Stock Activo como Disponible)
         const newVehicle: Vehicle = {
           id: item.vehiculoNuevo.id || `AUT-${Math.floor(100 + Math.random() * 900)}`,
           marca: item.vehiculoNuevo.marca || 'Sin Marca',
@@ -319,15 +454,19 @@ class StockService {
           fechaActualizacion: nowIso,
           origenDato: 'autonet_pdf',
           provinciaRadicacion: item.vehiculoNuevo.provinciaRadicacion || 'Neuquén',
+          isHistorical: false,
         };
         updatedMap.set(key, newVehicle);
-      } else if (item.tipo === 'modificado' && updatedMap.has(key)) {
+      } else if ((item.tipo === 'modificado' || item.tipo === 'sin_cambio') && updatedMap.has(key)) {
         const existing = updatedMap.get(key)!;
         
-        // REGLA CRÍTICA: Si el asesor marcó 'Vendido' manualmente, no volver a 'Disponible'
+        // REGLA CRÍTICA: Si el asesor marcó 'Vendido' manualmente, preservar estado y datos de venta
         let nextEstado = existing.estado;
         if (existing.estado === 'Vendido' && existing.estadoModificadoManualmente) {
           nextEstado = 'Vendido';
+        } else if (existing.estado === 'fuera_de_stock') {
+          // Si estaba fuera de stock pero reapareció en el PDF nuevo, reactivar a Disponible
+          nextEstado = 'Disponible';
         }
 
         // Actualizar todos los datos fuente extraídos del PDF nuevo
@@ -353,21 +492,25 @@ class StockService {
           if (item.vehiculoNuevo.fechaToma) sourceUpdates.fechaToma = item.vehiculoNuevo.fechaToma;
         }
 
-        // Aplicar campos modificados específicos
         const newProps: Partial<Vehicle> = {
           ...sourceUpdates,
           fechaActualizacion: nowIso,
           estado: nextEstado,
+          isHistorical: false, // Presente en el último PDF
         };
 
         if (item.cambios) {
           item.cambios.forEach((c) => {
             if (c.campo === 'estado' && existing.estadoModificadoManualmente && existing.estado === 'Vendido') {
-              // Proteger estado vendido manual
-              return;
+              return; // Proteger estado vendido manual
             }
             if (c.campo === 'kilometraje') {
               (newProps as any)[c.campo] = normalizeMileage(c.valorNuevo) ?? 0;
+            } else if (c.campo === 'precio') {
+              (newProps as any)[c.campo] =
+                typeof c.valorNuevo === 'number'
+                  ? c.valorNuevo
+                  : Number(String(c.valorNuevo).replace(/[^0-9]/g, '')) || 0;
             } else {
               (newProps as any)[c.campo] = c.valorNuevo;
             }
@@ -381,31 +524,35 @@ class StockService {
       } else if (item.tipo === 'no_aparece' && updatedMap.has(key)) {
         const existing = updatedMap.get(key)!;
         
-        // REGLA ESPECIAL (Sección 10): Si ya estaba marcada como VENDIDO y desaparece del PDF:
-        // NO modificar su estado. Conservarla como Vendido.
+        // REGLAS AUTOMÁTICAS: Unidad no presente en el nuevo PDF
+        // Sale del stock activo automáticamente hacia el histórico
         if (existing.estado === 'Vendido') {
-          // Se mantiene intacto como Vendido
-          return;
-        }
-
-        const action = missingActions?.[key] || 'mantener';
-        if (action === 'eliminar') {
-          updatedMap.delete(key);
-        } else if (action === 'vendido') {
+          // Caso A: Ya estaba vendida -> se mantiene como Vendido en el historial con datos de venta intactos
           updatedMap.set(key, {
             ...existing,
-            estado: 'Vendido',
-            estadoModificadoManualmente: true,
+            isHistorical: true,
+            fechaSalidaStock: existing.fechaSalidaStock || nowIso,
             fechaActualizacion: nowIso,
           });
-        } else if (action === 'reservado') {
+        } else if (existing.estado === 'Reservado') {
+          // Caso B: Estaba reservada -> pasa a histórico conservando el estado Reservado
           updatedMap.set(key, {
             ...existing,
-            estado: 'Reservado',
+            isHistorical: true,
+            fechaSalidaStock: existing.fechaSalidaStock || nowIso,
+            fechaActualizacion: nowIso,
+          });
+        } else {
+          // Caso C: Estaba disponible -> pasa a 'fuera_de_stock' en el registro histórico
+          // NO marcar como vendida automáticamente ni como reservada
+          updatedMap.set(key, {
+            ...existing,
+            estado: 'fuera_de_stock',
+            isHistorical: true,
+            fechaSalidaStock: nowIso,
             fechaActualizacion: nowIso,
           });
         }
-        // Si es 'mantener', simplemente se conserva en updatedMap
       }
     });
 

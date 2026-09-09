@@ -1,4 +1,5 @@
-export type VehicleStatus = 'Disponible' | 'Reservado' | 'Vendido';
+export type VehicleStatus = 'Disponible' | 'Reservado' | 'Vendido' | 'fuera_de_stock';
+export type SaleOwner = 'self' | 'other' | null;
 export type VehicleTransmission = 'Manual' | 'Automática';
 export type VehicleFuel = 'Nafta' | 'Diésel' | 'GNC' | 'Híbrido' | 'Eléctrico';
 export type VehicleTraction = '4x2' | '4x4' | 'AWD';
@@ -27,6 +28,15 @@ export interface Vehicle {
   fechaIncorporacion: string; // ISO string
   origenDato: 'autonet_pdf' | 'autonet_web' | 'manual';
   
+  // Control de ventas comerciales
+  saleOwner?: SaleOwner; // 'self' = vendida por mí, 'other' = vendida por otro vendedor, null = sin clasificar
+  soldAt?: string; // Fecha de venta (ISO string YYYY-MM-DD o ISO timestamp)
+  soldPrice?: number; // Precio al momento de la venta
+  
+  // Control de stock activo vs histórico
+  isHistorical?: boolean; // true si ya no figura en el stock activo del último PDF
+  fechaSalidaStock?: string; // ISO timestamp de cuándo dejó de figurar en el PDF activo
+
   // Campos preparados para cotización y transferencia DNRPA
   valorTablaDnrpaEstimado?: number;
   costoTransferenciaEstimado?: number;
@@ -179,6 +189,15 @@ export interface UpdateHistoryRecord {
   errores: string[];
 }
 
+export type CommercialFilter =
+  | 'activo' // Default: Stock activo (Disponible + Reservado)
+  | 'Disponible'
+  | 'Reservado'
+  | 'vendidas_propias' // Vendidas por mí
+  | 'vendidas_otros' // Vendidas por otros
+  | 'fuera_de_stock' // Fuera de stock (historial)
+  | 'todos'; // Todo
+
 export interface StockFilters {
   searchQuery: string;
   marca: string;
@@ -192,7 +211,8 @@ export interface StockFilters {
   combustible: string;
   caja: string;
   traccion: string;
-  estado: string; // 'Todos' | 'Disponible' | 'Reservado' | 'Vendido'
+  estado: string; // 'Todos' | 'Disponible' | 'Reservado' | 'Vendido' | 'fuera_de_stock'
+  estadoComercial?: CommercialFilter;
   ubicacion?: string; // Filtro por campo Ub (Pendiente, Solalique, GR, FINAN, Autonet)
   empresa?: string; // Filtro por campo Empresa (MIRAGE, IRUÑA, AKIRA, OIL BULL, etc.)
   fotosAutonet?: 'todas' | 'con_fotos' | 'sin_fotos';
