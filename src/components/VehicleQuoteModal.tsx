@@ -8,12 +8,16 @@ import {
   Share2, 
   AlertCircle,
   Calculator,
-  FileText
+  FileText,
+  CreditCard,
+  Plus,
+  Trash2
 } from 'lucide-react';
 import { Vehicle, ProvinceTransfer } from '../types/stock';
 import { dnrpaService } from '../services/dnrpaService';
-import { CommercialBudget, quoteService } from '../services/quoteService';
+import { CommercialBudget, FinancingOption, quoteService } from '../services/quoteService';
 import { formatCurrency } from '../utils/formatters';
+import { ADVISOR_INFO } from '../constants/advisor';
 import { BudgetModal } from './BudgetModal';
 
 interface VehicleQuoteModalProps {
@@ -22,6 +26,8 @@ interface VehicleQuoteModalProps {
   onUpdateVehicleTableValue?: (vehicleId: string, tableValue: number, province: ProvinceTransfer) => void;
   onOpenBudget?: (budget: CommercialBudget) => void;
 }
+
+const COMMON_ENTITIES = ['CREDINET', 'BNA', 'Santander', 'Macro', 'Galicia', 'BBVA'];
 
 export const VehicleQuoteModal: React.FC<VehicleQuoteModalProps> = ({
   vehicle,
@@ -42,6 +48,18 @@ export const VehicleQuoteModal: React.FC<VehicleQuoteModalProps> = ({
       ? vehicle.valorTablaDnrpaEstimado.toString() 
       : ''
   );
+
+  // 3. Financiación manual
+  const [llevaFinanciacion, setLlevaFinanciacion] = useState(false);
+  const [opcionesFinanciacion, setOpcionesFinanciacion] = useState<FinancingOption[]>([
+    {
+      id: 'opc-1',
+      entidad: 'CREDINET',
+      cuotas: 24,
+      montoCuota: 0,
+      detalle: 'Cuota fija en pesos',
+    },
+  ]);
 
   const [copiedPlate, setCopiedPlate] = useState(false);
   const [copiedShare, setCopiedShare] = useState(false);
@@ -64,6 +82,30 @@ export const VehicleQuoteModal: React.FC<VehicleQuoteModalProps> = ({
   const transferenciaEstimada = hasValidTableValue ? Math.round(baseImponible * (alicuota / 100)) : 0;
   const totalOperacion = vehiclePrice + transferenciaEstimada;
 
+  // Manejo de opciones de financiación manuales
+  const handleAddFinancingOption = () => {
+    setOpcionesFinanciacion((prev) => [
+      ...prev,
+      {
+        id: `opc-${Date.now()}`,
+        entidad: 'BNA',
+        cuotas: 36,
+        montoCuota: 0,
+        detalle: '',
+      },
+    ]);
+  };
+
+  const handleRemoveFinancingOption = (id: string) => {
+    setOpcionesFinanciacion((prev) => prev.filter((o) => o.id !== id));
+  };
+
+  const handleUpdateFinancingOption = (id: string, field: keyof FinancingOption, value: any) => {
+    setOpcionesFinanciacion((prev) =>
+      prev.map((o) => (o.id === id ? { ...o, [field]: value } : o))
+    );
+  };
+
   // Copiar patente para agilizar la carga en DNRPA
   const handleCopyPlate = () => {
     navigator.clipboard.writeText(vehicle.patente.trim().toUpperCase());
@@ -82,15 +124,22 @@ export const VehicleQuoteModal: React.FC<VehicleQuoteModalProps> = ({
 
   // Generar presupuesto formal formalizando la cotización actual
   const handleGenerateBudget = () => {
-    // Si hay un callback para guardar en la ficha, guardamos el valor de tabla
     if (onUpdateVehicleTableValue && hasValidTableValue) {
       onUpdateVehicleTableValue(vehicle.id, parsedTableValue, province);
     }
+
+    const validOptions = opcionesFinanciacion.filter((o) => o.montoCuota > 0 && o.entidad.trim());
 
     const newBudget = quoteService.createBudget({
       vehicle,
       dnrpaTableValue: parsedTableValue,
       province,
+      financiacion: llevaFinanciacion && validOptions.length > 0
+        ? {
+            llevaFinanciacion: true,
+            opciones: validOptions,
+          }
+        : undefined,
     });
 
     if (onOpenBudget) {
@@ -100,11 +149,13 @@ export const VehicleQuoteModal: React.FC<VehicleQuoteModalProps> = ({
     }
   };
 
-  // Copiar resumen al portapapeles para WhatsApp
+  // Copiar resumen al portapapeles para WhatsApp con firma fija del asesor
   const handleCopyShare = () => {
     if (!hasValidTableValue) return;
 
-    const summary = `🚗 *COTIZACIÓN DE TRANSFERENCIA*
+    const validOptions = opcionesFinanciacion.filter((o) => o.montoCuota > 0 && o.entidad.trim());
+
+    let summary = `🚗 *COTIZACIÓN DE TRANSFERENCIA*
 *Vehículo:* ${vehicle.marca} ${vehicle.modelo} ${vehicle.version} (${vehicle.anio})
 *Patente:* ${vehicle.patente}
 *Provincia:* ${province}
@@ -117,9 +168,24 @@ export const VehicleQuoteModal: React.FC<VehicleQuoteModalProps> = ({
 📄 TRANSFERENCIA ESTIMADA: ${formatCurrency(transferenciaEstimada)}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
 🏁 TOTAL ESTIMADO OPERACIÓN: ${formatCurrency(totalOperacion)}
+`;
 
-_Aviso: La transferencia se calcula sobre el mayor valor entre el precio de venta y el valor de tabla DNRPA. El importe es estimativo y puede variar según los costos y conceptos aplicables al momento de realizar la transferencia en el Registro Seccional correspondiente._
-_Autonet Usados Seleccionados_`;
+    if (llevaFinanciacion && validOptions.length > 0) {
+      summary += `\n🏦 *OPCIONES DE FINANCIACIÓN:*\n`;
+      validOptions.forEach((opc) => {
+        const cuotaStr = formatCurrency(opc.montoCuota);
+        const det = opc.detalle ? ` (${opc.detalle})` : '';
+        summary += `• ${opc.entidad}: ${opc.cuotas} cuotas de ${cuotaStr}${det}\n`;
+      });
+    }
+
+    summary += `\n_Aviso: La transferencia se calcula sobre el mayor valor entre el precio de venta y el valor de tabla DNRPA. El importe es estimativo y puede variar según los costos y conceptos aplicables al momento de realizar la transferencia en el Registro Seccional correspondiente._
+_Presupuesto válido por 24 horas._
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+${ADVISOR_INFO.nombre} | ${ADVISOR_INFO.cargo}
+📞 ${ADVISOR_INFO.telefono}
+📍 ${ADVISOR_INFO.direccion}, ${ADVISOR_INFO.ciudad}, ${ADVISOR_INFO.provincia}, ${ADVISOR_INFO.pais}`;
 
     navigator.clipboard.writeText(summary);
     setCopiedShare(true);
@@ -131,28 +197,29 @@ _Autonet Usados Seleccionados_`;
       <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-950/75 backdrop-blur-xs overflow-y-auto">
         <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full max-h-[95vh] flex flex-col overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
           
-          {/* Cabecera Principal */}
-          <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between shrink-0">
+          {/* Cabecera Principal - Estilo Autonet */}
+          <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between shrink-0">
             <div>
-              <h2 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">
-                COTIZACIÓN DE VEHÍCULO
+              <div className="flex items-center gap-2">
+                <span className="font-black text-sm tracking-widest text-blue-400">AUTONET</span>
+                <span className="text-[11px] text-slate-400 font-medium">• Cotizador</span>
+              </div>
+              <h2 className="text-base sm:text-lg font-black text-white tracking-tight mt-0.5">
+                COTIZACIÓN DE TRANSFERENCIA
               </h2>
-              <p className="text-xs text-slate-500 font-medium">
-                Cálculo de transferencia y presupuesto oficial
-              </p>
             </div>
 
             <button
               id="close-quote-modal-btn"
               onClick={onClose}
-              className="p-2 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
               title="Cerrar cotización"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
 
-          {/* Contenido Limpio y Directo */}
+          {/* Contenido */}
           <div className="p-5 sm:p-6 overflow-y-auto space-y-4">
             
             {/* 1. Información del Vehículo */}
@@ -191,7 +258,7 @@ _Autonet Usados Seleccionados_`;
 
               {/* 2. Selector de Provincia */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-slate-200/70">
-                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Provincia:</span>
+                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Provincia de radicación:</span>
                 <div className="inline-flex rounded-lg p-0.5 bg-slate-200">
                   <button
                     type="button"
@@ -221,15 +288,15 @@ _Autonet Usados Seleccionados_`;
               </div>
             </div>
 
-            {/* 3. Botón Principal: ABRIR DNRPA (en nueva pestaña) */}
+            {/* 3. Botón Principal: ABRIR DNRPA */}
             <a
               href={dnrpaService.OFFICIAL_ESTIMATOR_URL}
               target="_blank"
               rel="noopener noreferrer"
               id="btn-abrir-dnrpa"
-              className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 active:bg-slate-950 text-white font-black text-sm shadow-xs transition-colors group"
+              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 active:bg-slate-950 text-white font-bold text-xs shadow-xs transition-colors group"
             >
-              <span>ABRIR DNRPA</span>
+              <span>ABRIR ESTIMADOR OFICIAL DNRPA</span>
               <ExternalLink className="w-4 h-4 text-slate-300 group-hover:translate-x-0.5 transition-transform" />
             </a>
 
@@ -264,15 +331,15 @@ _Autonet Usados Seleccionados_`;
                     const raw = e.target.value.replace(/\D/g, '');
                     setTableValueInput(raw);
                   }}
-                  placeholder="Ingrese el valor obtenido del estimador DNRPA"
+                  placeholder="Ingrese el valor obtenido de la tabla DNRPA"
                   className="w-full pl-8 pr-4 py-2.5 rounded-xl border border-slate-300 font-mono font-bold text-slate-900 text-base focus:ring-2 focus:ring-blue-600 focus:border-blue-600 outline-hidden bg-white"
                 />
               </div>
             </div>
 
-            {/* 5. CÁLCULO AUTOMÁTICO (Solo visible cuando existe un valor de tabla válido) */}
+            {/* 5. CÁLCULO AUTOMÁTICO */}
             {hasValidTableValue ? (
-              <div className="bg-slate-900 text-white rounded-xl p-4 sm:p-5 space-y-3.5 shadow-md animate-in fade-in duration-150">
+              <div className="bg-slate-900 text-white rounded-xl p-4 sm:p-5 space-y-3 shadow-md">
                 <div className="divide-y divide-slate-800 text-xs">
                   
                   {/* PRECIO DE VENTA */}
@@ -333,18 +400,13 @@ _Autonet Usados Seleccionados_`;
                   </span>
                 </div>
 
-                {/* Aviso estimativo requerido */}
-                <div className="pt-2 border-t border-slate-800/70 text-[10px] text-slate-500 leading-relaxed italic">
-                  El importe es estimativo y puede variar según los costos y conceptos aplicables al momento de realizar la transferencia en el Registro Seccional correspondiente.
-                </div>
-
                 {/* Total Estimado de la Operación */}
                 <div className="pt-3 border-t border-slate-800 flex items-center justify-between">
                   <div>
                     <span className="text-[11px] text-slate-400 uppercase tracking-wider font-bold block">
                       TOTAL ESTIMADO OPERACIÓN
                     </span>
-                    <span className="text-[10px] text-slate-500">Vehículo + Transferencia Estimada</span>
+                    <span className="text-[10px] text-slate-500">Vehículo + Transferencia</span>
                   </div>
                   <span className="text-lg sm:text-xl font-black font-mono text-white">
                     {formatCurrency(totalOperacion)}
@@ -360,22 +422,179 @@ _Autonet Usados Seleccionados_`;
                   Ingrese el valor de tabla DNRPA para calcular la transferencia
                 </p>
                 <p className="text-[11px] text-slate-500 max-w-sm mx-auto">
-                  Presione <strong>ABRIR DNRPA</strong>, consulte la valuación oficial e ingrese el importe en el casillero superior.
+                  Presione <strong>ABRIR ESTIMADOR OFICIAL DNRPA</strong>, consulte la valuación oficial e ingrese el importe en el casillero superior.
                 </p>
               </div>
             )}
+
+            {/* 6. MÓDULO DE FINANCIACIÓN MANUAL (Requisito Clave) */}
+            <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 text-xs space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <CreditCard className="w-4 h-4 text-blue-600" />
+                  <span className="font-extrabold text-slate-800 uppercase tracking-wider">
+                    ¿LLEVA FINANCIACIÓN?
+                  </span>
+                </div>
+
+                <div className="inline-flex rounded-lg p-0.5 bg-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => setLlevaFinanciacion(false)}
+                    className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${
+                      !llevaFinanciacion
+                        ? 'bg-slate-800 text-white shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    NO
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLlevaFinanciacion(true)}
+                    className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${
+                      llevaFinanciacion
+                        ? 'bg-blue-600 text-white shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    SÍ
+                  </button>
+                </div>
+              </div>
+
+              {llevaFinanciacion && (
+                <div className="space-y-3 pt-3 border-t border-slate-200">
+                  <div className="text-[11px] text-slate-500 italic">
+                    Carga manual de cuotas sin cálculo automático de intereses ni fórmulas ocultas.
+                  </div>
+
+                  {opcionesFinanciacion.map((opc, idx) => (
+                    <div
+                      key={opc.id}
+                      className="bg-white rounded-lg p-3 border border-slate-200 shadow-xs space-y-2 relative"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-slate-800 text-[11px] uppercase">
+                          Alternativa #{idx + 1}
+                        </span>
+                        {opcionesFinanciacion.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveFinancingOption(opc.id)}
+                            className="text-red-500 hover:text-red-700 p-1 rounded"
+                            title="Eliminar opción"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        {/* Entidad */}
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-600 mb-0.5 uppercase">
+                            Entidad
+                          </label>
+                          <input
+                            type="text"
+                            value={opc.entidad}
+                            onChange={(e) => handleUpdateFinancingOption(opc.id, 'entidad', e.target.value)}
+                            placeholder="Ej. CREDINET, BNA"
+                            className="w-full px-2 py-1.5 rounded-md border border-slate-300 text-xs font-semibold uppercase"
+                          />
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {COMMON_ENTITIES.slice(0, 3).map((ent) => (
+                              <button
+                                key={ent}
+                                type="button"
+                                onClick={() => handleUpdateFinancingOption(opc.id, 'entidad', ent)}
+                                className={`text-[9px] px-1.5 py-0.5 rounded border ${
+                                  opc.entidad === ent
+                                    ? 'bg-blue-50 border-blue-400 text-blue-700 font-bold'
+                                    : 'bg-slate-50 border-slate-200 text-slate-600'
+                                }`}
+                              >
+                                {ent}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Cuotas */}
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-600 mb-0.5 uppercase">
+                            Cantidad de Cuotas
+                          </label>
+                          <select
+                            value={opc.cuotas}
+                            onChange={(e) => handleUpdateFinancingOption(opc.id, 'cuotas', Number(e.target.value))}
+                            className="w-full px-2 py-1.5 rounded-md border border-slate-300 text-xs font-semibold bg-white"
+                          >
+                            <option value={12}>12 cuotas</option>
+                            <option value={18}>18 cuotas</option>
+                            <option value={24}>24 cuotas</option>
+                            <option value={36}>36 cuotas</option>
+                            <option value={48}>48 cuotas</option>
+                            <option value={60}>60 cuotas</option>
+                          </select>
+                        </div>
+
+                        {/* Monto de Cuota */}
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-600 mb-0.5 uppercase">
+                            Monto por Cuota ($)
+                          </label>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            value={opc.montoCuota > 0 ? new Intl.NumberFormat('es-AR').format(opc.montoCuota) : ''}
+                            onChange={(e) => {
+                              const raw = e.target.value.replace(/\D/g, '');
+                              handleUpdateFinancingOption(opc.id, 'montoCuota', raw ? Number(raw) : 0);
+                            }}
+                            placeholder="Ej. 350.000"
+                            className="w-full px-2 py-1.5 rounded-md border border-slate-300 text-xs font-mono font-bold text-slate-900"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Detalle opcional */}
+                      <div>
+                        <input
+                          type="text"
+                          value={opc.detalle || ''}
+                          onChange={(e) => handleUpdateFinancingOption(opc.id, 'detalle', e.target.value)}
+                          placeholder="Observación opcional (ej. Cuota fija en pesos, Tasa anual especial)"
+                          className="w-full px-2 py-1 rounded border border-slate-200 text-[11px] text-slate-600"
+                        />
+                      </div>
+                    </div>
+                  ))}
+
+                  <button
+                    type="button"
+                    onClick={handleAddFinancingOption}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-100 border border-slate-300 text-blue-700 font-bold text-[11px] transition-colors shadow-xs"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Agregar otra alternativa de financiación</span>
+                  </button>
+                </div>
+              )}
+            </div>
 
           </div>
 
           {/* Footer con Acciones */}
           <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 shrink-0">
             <div className="flex items-center gap-2">
-              {/* Botón GENERAR PRESUPUESTO - Requisito Mandatorio */}
+              {/* Botón GENERAR PRESUPUESTO */}
               <button
                 type="button"
                 id="btn-generar-presupuesto"
                 onClick={handleGenerateBudget}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-black text-xs transition-colors shadow-xs"
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-black text-xs transition-colors shadow-xs"
               >
                 <FileText className="w-4 h-4" />
                 <span>GENERAR PRESUPUESTO</span>
@@ -385,9 +604,9 @@ _Autonet Usados Seleccionados_`;
                 <button
                   type="button"
                   onClick={handleCopyShare}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition-colors"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition-colors"
                 >
-                  {copiedShare ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Share2 className="w-3.5 h-3.5" />}
+                  {copiedShare ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Share2 className="w-3.5 h-3.5 text-slate-300" />}
                   <span>{copiedShare ? '¡Copiado!' : 'Copiar WhatsApp'}</span>
                 </button>
               )}
@@ -396,7 +615,7 @@ _Autonet Usados Seleccionados_`;
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-xs transition-colors"
+              className="px-4 py-2.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-xs transition-colors"
             >
               Cerrar
             </button>
@@ -415,3 +634,4 @@ _Autonet Usados Seleccionados_`;
     </>
   );
 };
+

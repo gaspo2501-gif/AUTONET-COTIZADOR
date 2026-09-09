@@ -12,8 +12,10 @@ import {
   Sparkles,
   UserCheck
 } from 'lucide-react';
+import { ADVISOR_INFO } from '../constants/advisor';
 
 export type NavTab = 'stock' | 'ventas' | 'actualizar' | 'historial' | 'cotizaciones' | 'presupuestos' | 'configuracion';
+
 
 interface NavbarProps {
   currentTab: NavTab;
@@ -167,14 +169,14 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Quick Advisor Info */}
           <div className="hidden sm:flex items-center gap-3">
             <div className="text-right">
-              <div className="text-xs font-bold text-slate-200">Asesor Comercial</div>
+              <div className="text-xs font-bold text-slate-200">{ADVISOR_INFO.nombre}</div>
               <div className="text-[11px] text-emerald-400 font-medium flex items-center justify-end gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                Autonet Neuquén
+                {ADVISOR_INFO.cargo}
               </div>
             </div>
-            <div className="w-9 h-9 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-bold text-blue-400">
-              AC
+            <div className="w-9 h-9 rounded-full bg-blue-600 border border-blue-400 flex items-center justify-center text-xs font-black text-white shadow-xs">
+              GN
             </div>
           </div>
 

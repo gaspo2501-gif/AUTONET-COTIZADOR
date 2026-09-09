@@ -1,5 +1,6 @@
 import { Vehicle, ProvinceTransfer } from '../types/stock';
 import { formatCurrency } from '../utils/formatters';
+import { ADVISOR_INFO } from '../constants/advisor';
 
 export interface AdvisorSettings {
   nombre: string;
@@ -12,6 +13,19 @@ export interface AdvisorSettings {
 export interface ClientData {
   nombre?: string;
   telefono?: string;
+}
+
+export interface FinancingOption {
+  id: string;
+  entidad: string;
+  cuotas: number;
+  montoCuota: number;
+  detalle?: string;
+}
+
+export interface FinancingPlan {
+  llevaFinanciacion: boolean;
+  opciones: FinancingOption[];
 }
 
 export interface CommercialBudget {
@@ -45,6 +59,9 @@ export interface CommercialBudget {
   transferenciaEstimada: number;
   totalEstimado: number; // precioVehiculo + transferenciaEstimada
 
+  // Financiación manual (opcional)
+  financiacion?: FinancingPlan;
+
   // Datos adicionales
   datosCliente: ClientData;
   datosAsesor: AdvisorSettings;
@@ -55,11 +72,11 @@ const ADVISOR_STORAGE_KEY = 'autonet_advisor_settings_v1';
 const BUDGETS_STORAGE_KEY = 'autonet_saved_budgets_v1';
 
 export const DEFAULT_ADVISOR: AdvisorSettings = {
-  nombre: '',
-  telefono: '',
+  nombre: ADVISOR_INFO.nombre,
+  telefono: ADVISOR_INFO.telefono,
   email: '',
-  sucursal: 'Neuquén Capital',
-  concesionaria: 'Autonet Usados Seleccionados',
+  sucursal: `${ADVISOR_INFO.direccion}, ${ADVISOR_INFO.ciudad}`,
+  concesionaria: ADVISOR_INFO.concesionaria,
 };
 
 class QuoteService {
@@ -102,8 +119,9 @@ class QuoteService {
     province: ProvinceTransfer;
     clientData?: ClientData;
     advisorOverride?: AdvisorSettings;
+    financiacion?: FinancingPlan;
   }): CommercialBudget {
-    const { vehicle, dnrpaTableValue, province, clientData, advisorOverride } = params;
+    const { vehicle, dnrpaTableValue, province, clientData, advisorOverride, financiacion } = params;
     
     const now = new Date();
     const expiration = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 24 horas exactas
@@ -145,6 +163,7 @@ class QuoteService {
       alicuota,
       transferenciaEstimada,
       totalEstimado,
+      financiacion: financiacion?.llevaFinanciacion ? financiacion : undefined,
       datosCliente: {
         nombre: clientData?.nombre?.trim() || '',
         telefono: clientData?.telefono?.trim() || '',
@@ -193,7 +212,7 @@ class QuoteService {
   }
 
   /**
-   * Genera el texto simple, limpio y comercial para copiar y enviar por WhatsApp (Sección 22).
+   * Genera el texto simple, limpio y comercial para copiar y enviar por WhatsApp con firma fija.
    */
   public formatBudgetWhatsAppMessage(budget: CommercialBudget): string {
     const v = budget.vehiculo;
@@ -201,27 +220,44 @@ class QuoteService {
     const transfFormatted = formatCurrency(budget.transferenciaEstimada);
     const totalFormatted = formatCurrency(budget.totalEstimado);
 
-    const advisorName = budget.datosAsesor.nombre.trim();
     const vehiculoTitulo = `${v.marca} ${v.modelo} ${v.version}`.trim();
     const hasValidAutonetUrl = Boolean(v.urlAutonetOriginal && v.urlAutonetOriginal.startsWith('http'));
 
-    let text = `Hola! Te paso el presupuesto por el ${vehiculoTitulo}:\n\n`;
-    text += `Precio: ${precioFormatted}\n`;
-    text += `Valor de la transferencia: ${transfFormatted}\n\n`;
-    text += `Total estimado: ${totalFormatted}\n\n`;
-    text += `Presupuesto válido por 24 horas.\n`;
+    let text = `Hola! Te paso el presupuesto por el *${vehiculoTitulo}* (Año ${v.anio}):\n\n`;
+    text += `💰 *Precio de venta:* ${precioFormatted}\n`;
+    text += `📄 *Transferencia estimada:* ${transfFormatted}\n`;
+    text += `🏁 *Total estimado:* ${totalFormatted}\n\n`;
 
-    if (hasValidAutonetUrl) {
-      text += `\nPodés ver la unidad acá:\n${v.urlAutonetOriginal}\n`;
+    // Financiación si corresponde
+    if (budget.financiacion?.llevaFinanciacion && budget.financiacion.opciones.length > 0) {
+      text += `🏦 *OPCIONES DE FINANCIACIÓN:*\n`;
+      budget.financiacion.opciones.forEach((opc) => {
+        const cuotaFmt = formatCurrency(opc.montoCuota);
+        const detalleStr = opc.detalle ? ` (${opc.detalle})` : '';
+        text += `• *${opc.entidad}:* ${opc.cuotas} cuotas de ${cuotaFmt}${detalleStr}\n`;
+      });
+      text += `\n`;
     }
 
-    text += `\nSaludos,\n${advisorName || 'Asesor Comercial'}`;
+    text += `⏱️ _Presupuesto válido por 24 horas._\n`;
+
+    if (hasValidAutonetUrl) {
+      text += `🔗 *Ver fotos y ficha técnica acá:*\n${v.urlAutonetOriginal}\n\n`;
+    } else {
+      text += `\n`;
+    }
+
+    // Firma fija del Asesor
+    text += `━━━━━━━━━━━━━━━━━━━━━\n`;
+    text += `${ADVISOR_INFO.nombre} | ${ADVISOR_INFO.cargo}\n`;
+    text += `📞 ${ADVISOR_INFO.telefono}\n`;
+    text += `📍 ${ADVISOR_INFO.direccion}, ${ADVISOR_INFO.ciudad}, ${ADVISOR_INFO.provincia}, ${ADVISOR_INFO.pais}`;
 
     return text;
   }
 
   /**
-   * Formatea un mensaje de WhatsApp para compartir los datos del vehículo
+   * Formatea un mensaje de WhatsApp para compartir los datos del vehículo con firma fija.
    */
   public formatVehicleShareMessage(vehicle: Vehicle): string {
     const kmStr = new Intl.NumberFormat('es-AR').format(vehicle.kilometraje);
@@ -235,13 +271,17 @@ class QuoteService {
 ⛽ *Combustible:* ${vehicle.combustible || 'Nafta'}
 🕹️ *Transmisión:* ${vehicle.caja || 'Manual'}
 🏷️ *Patente:* ${vehicle.patente}
-📍 *Ubicación:* ${vehicle.ubicacion || 'Neuquén'}
 
 💰 *Precio de venta:* ${precioStr}
 ${vehicle.urlAutonetOriginal ? `🔗 *Ver en web:* ${vehicle.urlAutonetOriginal}\n` : ''}
-Consulte por cotización de transferencia y entrega inmediata.
-_Autonet Usados Seleccionados_`;
+Consulte por cotización de transferencia, financiación y entrega inmediata.
+
+━━━━━━━━━━━━━━━━━━━━━
+${ADVISOR_INFO.nombre} | ${ADVISOR_INFO.cargo}
+📞 ${ADVISOR_INFO.telefono}
+📍 ${ADVISOR_INFO.direccion}, ${ADVISOR_INFO.ciudad}, ${ADVISOR_INFO.provincia}, ${ADVISOR_INFO.pais}`;
   }
 }
 
 export const quoteService = new QuoteService();
+
