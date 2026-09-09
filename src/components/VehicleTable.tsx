@@ -1,5 +1,14 @@
 import React from 'react';
-import { Eye, CheckCircle2, AlertCircle, XCircle, ExternalLink, Building2, Calculator } from 'lucide-react';
+import { 
+  Eye, 
+  CheckCircle2, 
+  AlertCircle, 
+  XCircle, 
+  ExternalLink, 
+  Building2, 
+  Calculator,
+  Tag
+} from 'lucide-react';
 import { Vehicle } from '../types/stock';
 import { formatCurrency, formatKm } from '../utils/formatters';
 import { getSituacionOperativaInfo, getEmpresaBadgeClass } from '../utils/autonetHelpers';
@@ -22,7 +31,7 @@ export const VehicleTable: React.FC<VehicleTableProps> = ({
   const getStatusBadge = (vehicle: Vehicle) => {
     if (vehicle.isHistorical || vehicle.estado === 'fuera_de_stock') {
       return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-200 text-slate-700">
+        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200">
           Fuera de stock
         </span>
       );
@@ -31,38 +40,38 @@ export const VehicleTable: React.FC<VehicleTableProps> = ({
     switch (vehicle.estado) {
       case 'Disponible':
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">
-            <CheckCircle2 className="w-3 h-3" />
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 shadow-2xs">
+            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
             Disponible
           </span>
         );
       case 'Reservado':
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800">
-            <AlertCircle className="w-3 h-3" />
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-300 shadow-2xs">
+            <AlertCircle className="w-3 h-3 text-amber-600" />
             Reservado
           </span>
         );
       case 'Vendido':
         if (vehicle.saleOwner === 'self') {
           return (
-            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">
-              <CheckCircle2 className="w-3 h-3" />
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-teal-50 text-teal-800 border border-teal-200">
+              <CheckCircle2 className="w-3 h-3 text-teal-600" />
               Vendida por mí
             </span>
           );
         }
         if (vehicle.saleOwner === 'other') {
           return (
-            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">
-              <XCircle className="w-3 h-3" />
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-50 text-indigo-800 border border-indigo-200">
+              <XCircle className="w-3 h-3 text-indigo-600" />
               Vendido (otro)
             </span>
           );
         }
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-100 text-rose-800">
-            <XCircle className="w-3 h-3" />
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-50 text-rose-800 border border-rose-200">
+            <XCircle className="w-3 h-3 text-rose-600" />
             Vendido
           </span>
         );
@@ -76,7 +85,7 @@ export const VehicleTable: React.FC<VehicleTableProps> = ({
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm border-collapse">
           <thead>
-            <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 text-xs font-bold uppercase tracking-wider">
+            <tr className="bg-slate-900 border-b border-slate-800 text-slate-200 text-xs font-extrabold uppercase tracking-wider">
               <th className="py-3 px-4">Patente</th>
               <th className="py-3 px-4">Vehículo</th>
               <th className="py-3 px-3">Situación (Ub)</th>
@@ -106,7 +115,7 @@ export const VehicleTable: React.FC<VehicleTableProps> = ({
                   {/* Patente */}
                   <td className="py-3 px-4 whitespace-nowrap">
                     <div className="flex items-center gap-1.5">
-                      <span className="px-2.5 py-1 rounded bg-slate-900 text-white font-mono text-xs font-bold tracking-wider">
+                      <span className="px-2.5 py-1 rounded bg-slate-950 text-white font-mono text-xs font-black tracking-wider shadow-2xs">
                         {v.patente}
                       </span>
                       {hasValidAutonetUrl && (
@@ -115,7 +124,7 @@ export const VehicleTable: React.FC<VehicleTableProps> = ({
                           target="_blank"
                           rel="noopener noreferrer"
                           title="Ver en autonet.com.ar"
-                          className="text-blue-500 hover:text-blue-700"
+                          className="text-blue-600 hover:text-blue-800"
                         >
                           <ExternalLink className="w-3.5 h-3.5" />
                         </a>
@@ -128,7 +137,7 @@ export const VehicleTable: React.FC<VehicleTableProps> = ({
                   <td className="py-3 px-4 max-w-xs">
                     <button 
                       onClick={() => onSelect(v)}
-                      className="text-left font-bold text-slate-900 hover:text-blue-600 block transition-colors"
+                      className="text-left font-bold text-slate-900 hover:text-blue-700 block transition-colors cursor-pointer"
                     >
                       {v.marca} {v.modelo}
                     </button>
@@ -170,7 +179,7 @@ export const VehicleTable: React.FC<VehicleTableProps> = ({
                   </td>
 
                   {/* Precio Venta */}
-                  <td className="py-3 px-4 text-right whitespace-nowrap font-mono font-bold text-blue-700">
+                  <td className="py-3 px-4 text-right whitespace-nowrap font-mono font-black text-blue-700">
                     {formatCurrency(v.precio, v.moneda)}
                   </td>
 
@@ -180,68 +189,57 @@ export const VehicleTable: React.FC<VehicleTableProps> = ({
                     <div className="text-[11px] text-slate-400">{v.caja}</div>
                   </td>
 
-                  {/* Estado */}
+                  {/* Estado comercial */}
                   <td className="py-3 px-3 whitespace-nowrap">
                     {getStatusBadge(v)}
                   </td>
 
                   {/* Acciones */}
-                  <td className="py-3 px-4 text-center whitespace-nowrap">
-                    <div className="flex items-center justify-center gap-1.5">
-                      <button
-                        onClick={() => onSelect(v)}
-                        className="p-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors"
-                        title="Ver ficha completa"
-                      >
-                        <Eye className="w-4 h-4" />
-                      </button>
-
-                      {onQuote && (
+                  <td className="py-3 px-4 whitespace-nowrap text-center">
+                    <div className="flex items-center justify-center gap-1">
+                      
+                      {/* Botón Cotizar (Principal) */}
+                      {onQuote && v.estado !== 'Vendido' && !v.isHistorical && (
                         <button
                           onClick={() => onQuote(v)}
-                          className="p-1.5 rounded-lg text-blue-600 hover:text-blue-800 hover:bg-blue-50 transition-colors"
-                          title="Cotizar transferencia DNRPA"
+                          title="Cotizar unidad y transferencias"
+                          className="p-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white transition-colors cursor-pointer"
                         >
                           <Calculator className="w-4 h-4" />
                         </button>
                       )}
 
-                      {/* Toggle simple de estado rápido o gestión de venta */}
-                      {v.estado === 'Disponible' ? (
+                      {/* Botón Ver Ficha */}
+                      <button
+                        onClick={() => onSelect(v)}
+                        title="Ver ficha completa"
+                        className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-600 hover:text-slate-900 transition-colors cursor-pointer"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </button>
+
+                      {/* Botón Registrar Venta */}
+                      {onOpenMarkAsSold && v.estado !== 'Vendido' && !v.isHistorical && (
                         <button
-                          onClick={() => onOpenMarkAsSold ? onOpenMarkAsSold(v) : onStatusChange(v.id, 'Vendido')}
-                          className="text-[11px] px-2 py-1 rounded bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-600 border border-slate-200 transition-colors"
+                          onClick={() => onOpenMarkAsSold(v)}
                           title="Registrar venta"
+                          className="p-1.5 rounded-lg hover:bg-emerald-50 text-slate-500 hover:text-emerald-700 transition-colors cursor-pointer"
                         >
-                          Vender
+                          <Tag className="w-4 h-4" />
                         </button>
-                      ) : v.estado === 'Vendido' ? (
-                        <div className="flex items-center gap-1">
-                          {onOpenMarkAsSold && (
-                            <button
-                              onClick={() => onOpenMarkAsSold(v)}
-                              className="text-[11px] px-1.5 py-1 rounded bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 transition-colors"
-                              title="Modificar venta"
-                            >
-                              Venta
-                            </button>
-                          )}
-                          <button
-                            onClick={() => onStatusChange(v.id, 'Disponible')}
-                            className="text-[11px] px-1.5 py-1 rounded bg-slate-100 hover:bg-emerald-50 text-slate-600 hover:text-emerald-600 border border-slate-200 transition-colors"
-                            title="Reactivar a disponible"
-                          >
-                            Reactivar
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => onStatusChange(v.id, 'Disponible')}
-                          className="text-[11px] px-2 py-1 rounded bg-slate-100 hover:bg-emerald-50 text-slate-600 hover:text-emerald-600 border border-slate-200 transition-colors"
-                          title="Liberar reserva"
+                      )}
+
+                      {/* Selector rápido de estado si no está vendido */}
+                      {v.estado !== 'Vendido' && !v.isHistorical && (
+                        <select
+                          value={v.estado}
+                          onChange={(e) => onStatusChange(v.id, e.target.value as any)}
+                          className="text-[11px] font-bold border border-slate-200 rounded-md py-1 px-1.5 bg-slate-50 text-slate-700 hover:bg-white outline-none cursor-pointer ml-1"
                         >
-                          Disponible
-                        </button>
+                          <option value="Disponible">Disponible</option>
+                          <option value="Reservado">Reservado</option>
+                          <option value="Vendido">Vendido</option>
+                        </select>
                       )}
                     </div>
                   </td>

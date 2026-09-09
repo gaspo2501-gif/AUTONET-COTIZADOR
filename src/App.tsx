@@ -1,27 +1,30 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
-  LayoutGrid, 
-  List, 
-  Car, 
   ArrowUpDown, 
+  Grid, 
+  List, 
   CheckCircle2, 
-  XCircle,
-  AlertCircle,
-  RotateCcw,
-  Sparkles,
-  SlidersHorizontal,
-  FileUp,
-  History
+  AlertCircle, 
+  Sparkles
 } from 'lucide-react';
-import { StockFilters, Vehicle, VehicleStatus, ProvinceTransfer } from './types/stock';
+import { Vehicle, StockFilters, VehicleStatus, ProvinceTransfer } from './types/stock';
 import { stockService } from './services/stockService';
+import { CommercialBudget } from './services/quoteService';
 import { normalizeMileage } from './utils/formatters';
+import { 
+  calculateStockCounts, 
+  applyStockFilters, 
+  validateVisibleVehiclesIntegrity 
+} from './utils/stockSelectors';
+
 import { Navbar, NavTab } from './components/Navbar';
 import { StockFiltersBar } from './components/StockFiltersBar';
 import { VehicleCard } from './components/VehicleCard';
 import { VehicleTable } from './components/VehicleTable';
 import { VehicleDetailModal } from './components/VehicleDetailModal';
 import { VehicleQuoteModal } from './components/VehicleQuoteModal';
+import { BudgetModal } from './components/BudgetModal';
+import { QuoteDocument } from './components/QuoteDocument';
 import { UpdateStockView } from './components/UpdateStockView';
 import { UpdateHistoryView } from './components/UpdateHistoryView';
 import { FutureModulesView } from './components/FutureModulesView';
@@ -41,8 +44,11 @@ const DEFAULT_FILTERS: StockFilters = {
   combustible: '',
   caja: '',
   traccion: '',
-  estado: 'Todos',
+  estado: '',
   estadoComercial: 'activo', // Por defecto muestra únicamente stock activo (Disponible + Reservado)
+  ubicacion: '',
+  empresa: '',
+  fotosAutonet: 'todas',
 };
 
 export default function App() {
@@ -53,6 +59,7 @@ export default function App() {
   const [filters, setFilters] = useState<StockFilters>(DEFAULT_FILTERS);
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
   const [quoteVehicle, setQuoteVehicle] = useState<Vehicle | null>(null);
+  const [activeBudget, setActiveBudget] = useState<CommercialBudget | null>(null);
   const [soldModalVehicle, setSoldModalVehicle] = useState<Vehicle | null>(null);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'info' | 'warn' } | null>(null);
 
@@ -60,17 +67,14 @@ export default function App() {
   useEffect(() => {
     const unsubscribe = stockService.subscribe((updatedList) => {
       setVehicles([...updatedList]);
-      // Si el vehículo seleccionado está abierto, actualizar sus datos
       if (selectedVehicle) {
         const found = updatedList.find((v) => v.id === selectedVehicle.id);
         if (found) setSelectedVehicle(found);
       }
-      // Si el vehículo a cotizar está abierto, actualizar sus datos
       if (quoteVehicle) {
         const foundQuote = updatedList.find((v) => v.id === quoteVehicle.id);
         if (foundQuote) setQuoteVehicle(foundQuote);
       }
-      // Si el vehículo en modal de venta está abierto, actualizar sus datos
       if (soldModalVehicle) {
         const foundSold = updatedList.find((v) => v.id === soldModalVehicle.id);
         if (foundSold) setSoldModalVehicle(foundSold);
@@ -138,10 +142,13 @@ export default function App() {
 
   // Manejo de cambio de estado manual (Vendido / Disponible / Reservado)
   const handleStatusChange = (id: string, newStatus: VehicleStatus) => {
+    const current = vehicles.find((v) => v.id === id);
+    if (!current) return;
+
     if (newStatus === 'Vendido') {
-      const v = vehicles.find((item) => item.id === id);
-      if (v) {
-        setSoldModalVehicle(v);
+      const target = vehicles.find((v) => v.id === id);
+      if (target) {
+        setSoldModalVehicle(target);
         return;
       }
     }
@@ -160,96 +167,22 @@ export default function App() {
     }
   };
 
+  // Restablecimiento estricto de filtros: vuelve a Stock Activo y borra avanzados
   const resetFilters = () => {
-    setFilters(DEFAULT_FILTERS);
+    setFilters({ ...DEFAULT_FILTERS });
   };
 
-  // Filtrado de vehículos
+  // Conteos globales centralizados (ÚNICA FUENTE DE VERDAD)
+  const stockCounts = useMemo(() => {
+    return calculateStockCounts(vehicles);
+  }, [vehicles]);
+
+  // Filtrado de vehículos reactivo e inmutable
   const filteredVehicles = useMemo(() => {
-    return vehicles.filter((v) => {
-      // Búsqueda general por patente, marca, modelo, versión
-      if (filters.searchQuery.trim()) {
-        const q = filters.searchQuery.toLowerCase().trim();
-        const searchTarget = `${v.patente} ${v.marca} ${v.modelo} ${v.version} ${v.anio} ${v.color}`.toLowerCase();
-        // También comparar patente limpia sin espacios
-        const cleanPatente = v.patente.replace(/\s+/g, '').toLowerCase();
-        const cleanQuery = q.replace(/\s+/g, '');
-        if (!searchTarget.includes(q) && !cleanPatente.includes(cleanQuery)) {
-          return false;
-        }
-      }
-
-      // Marca
-      if (filters.marca && v.marca !== filters.marca) return false;
-
-      // Modelo
-      if (filters.modelo && v.modelo !== filters.modelo) return false;
-
-      // Rango de año
-      if (filters.anioMin !== '' && v.anio < filters.anioMin) return false;
-      if (filters.anioMax !== '' && v.anio > filters.anioMax) return false;
-
-      // Rango de kilometraje con comparación estrictamente numérica
-      const km = normalizeMileage(v.kilometraje);
-      const minKm = normalizeMileage(filters.kmMin);
-      const maxKm = normalizeMileage(filters.kmMax);
-
-      if (minKm !== null) {
-        if (km === null || km < minKm) return false;
-      }
-      if (maxKm !== null) {
-        if (km === null || km > maxKm) return false;
-      }
-
-      // Rango de precio
-      if (filters.precioMin !== '' && v.precio < filters.precioMin) return false;
-      if (filters.precioMax !== '' && v.precio > filters.precioMax) return false;
-
-      // Combustible
-      if (filters.combustible && v.combustible !== filters.combustible) return false;
-
-      // Caja
-      if (filters.caja && v.caja !== filters.caja) return false;
-
-      // Tracción
-      if (filters.traccion && v.traccion !== filters.traccion) return false;
-
-      // Situación operativa / Ubicación (Ub: P, S, A, GR, FINAN)
-      if (filters.ubicacion) {
-        const vUb = (v.ubCode || v.ubicacion || '').trim().toUpperCase();
-        if (vUb !== filters.ubicacion.trim().toUpperCase()) return false;
-      }
-
-      // Empresa / Concesionario
-      if (filters.empresa) {
-        const vEmp = (v.empresa || '').trim().toUpperCase();
-        if (vEmp !== filters.empresa.trim().toUpperCase()) return false;
-      }
-
-      // Filtro de Estado Comercial prioritario
-      const commercial = filters.estadoComercial || 'activo';
-      if (commercial === 'activo') {
-        // Stock Activo: únicamente unidades no históricas y disponibles o reservadas
-        if (v.isHistorical || v.estado === 'fuera_de_stock') return false;
-        if (v.estado !== 'Disponible' && v.estado !== 'Reservado') return false;
-      } else if (commercial === 'Disponible') {
-        if (v.isHistorical || v.estado !== 'Disponible') return false;
-      } else if (commercial === 'Reservado') {
-        if (v.isHistorical || v.estado !== 'Reservado') return false;
-      } else if (commercial === 'vendidas_propias') {
-        if (v.estado !== 'Vendido' || v.saleOwner !== 'self') return false;
-      } else if (commercial === 'vendidas_otros') {
-        if (v.estado !== 'Vendido' || v.saleOwner !== 'other') return false;
-      } else if (commercial === 'fuera_de_stock') {
-        if (!v.isHistorical && v.estado !== 'fuera_de_stock') return false;
-      }
-      // 'todos': no excluye por estado comercial
-
-      return true;
-    });
+    return applyStockFilters(vehicles, filters);
   }, [vehicles, filters]);
 
-  // Ordenamiento
+  // Ordenamiento de los vehículos filtrados
   const sortedVehicles = useMemo(() => {
     const list = [...filteredVehicles];
 
@@ -265,7 +198,6 @@ export default function App() {
         if (orderMap[a.estado] !== orderMap[b.estado]) {
           return orderMap[a.estado] - orderMap[b.estado];
         }
-        // Si tienen el mismo estado, ordenar por año descendente
         return b.anio - a.anio;
       }
 
@@ -278,312 +210,353 @@ export default function App() {
     });
   }, [filteredVehicles, sortBy]);
 
-  // Contadores para métricas
-  const availableCount = useMemo(() => {
-    return vehicles.filter((v) => !v.isHistorical && v.estado === 'Disponible').length;
-  }, [vehicles]);
+  // Validación de seguridad para prevenir regresiones en desarrollo (Requisito 30)
+  useEffect(() => {
+    validateVisibleVehiclesIntegrity(filters.estadoComercial || 'activo', sortedVehicles);
+  }, [filters.estadoComercial, sortedVehicles]);
 
-  const reservedCount = useMemo(() => {
-    return vehicles.filter((v) => !v.isHistorical && v.estado === 'Reservado').length;
-  }, [vehicles]);
-
-  const soldCount = useMemo(() => {
-    return vehicles.filter((v) => v.estado === 'Vendido').length;
-  }, [vehicles]);
-
-  const mySalesCount = useMemo(() => {
-    return vehicles.filter((v) => v.estado === 'Vendido' && v.saleOwner === 'self').length;
-  }, [vehicles]);
-
-  const activeCount = useMemo(() => {
-    return vehicles.filter((v) => !v.isHistorical && (v.estado === 'Disponible' || v.estado === 'Reservado')).length;
-  }, [vehicles]);
+  const commercialLabel = useMemo(() => {
+    switch (filters.estadoComercial) {
+      case 'Disponible': return 'Disponibles';
+      case 'Reservado': return 'Reservados';
+      case 'vendidas_propias': return 'Mis Ventas';
+      case 'vendidas_otros': return 'Vendidas por otros';
+      case 'fuera_de_stock': return 'Fuera de stock';
+      case 'todos': return 'Todos los estados';
+      default: return null;
+    }
+  }, [filters.estadoComercial]);
 
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col selection:bg-blue-100 selection:text-blue-900">
-      
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className="fixed bottom-5 right-5 z-50 animate-in slide-in-from-bottom-5 fade-in duration-200">
-          <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl bg-slate-900 text-white shadow-xl border border-slate-700 text-xs sm:text-sm font-medium max-w-md">
-            {toastMessage.type === 'success' && <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />}
-            {toastMessage.type === 'info' && <Sparkles className="w-5 h-5 text-blue-400 shrink-0" />}
-            {toastMessage.type === 'warn' && <AlertCircle className="w-5 h-5 text-amber-400 shrink-0" />}
-            <span>{toastMessage.text}</span>
-          </div>
-        </div>
-      )}
+    <>
+      {/* 1. DOCUMENTO DE IMPRESIÓN INDEPENDIENTE (1 HOJA A4 ESTRICTA)
+          Visible exclusivamente durante @media print, totalmente fuera de la jerarquía interactiva */}
+      <div id="quote-print-root" className="hidden print:block">
+        {activeBudget && (
+          <QuoteDocument
+            vehicle={activeBudget.vehiculo}
+            vehiclePrice={activeBudget.precioVehiculo}
+            transferValue={activeBudget.transferenciaEstimada}
+            total={activeBudget.totalEstimado}
+            financingOptions={activeBudget.financiacion?.opciones}
+            quoteDate={activeBudget.fechaEmision}
+            validUntil={activeBudget.fechaVencimiento}
+            clientName={activeBudget.datosCliente?.nombre}
+            clientPhone={activeBudget.datosCliente?.telefono}
+          />
+        )}
+      </div>
 
-      {/* Barra de Navegación Principal */}
-      <Navbar
-        currentTab={currentTab}
-        onSelectTab={setCurrentTab}
-        availableCount={availableCount}
-        totalCount={vehicles.length}
-        mySalesCount={mySalesCount}
-      />
-
-      {/* Contenido Principal */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      {/* 2. ÁRBOL INTERACTIVO COMPLETO DE LA APLICACIÓN (Oculto al imprimir) */}
+      <div id="app-interactive-root" className="min-h-screen bg-slate-50 flex flex-col selection:bg-blue-100 selection:text-blue-900 print:hidden">
         
-        {/* VISTA 1: STOCK PRINCIPAL */}
-        {currentTab === 'stock' && (
-          <div className="space-y-4 animate-in fade-in duration-150">
-            
-            {/* Banner Superior con métricas para el Asesor Comercial */}
-            <div className="bg-white rounded-xl p-4 sm:p-5 border border-slate-200/90 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-                    Stock de Usados
-                  </h1>
-                  <span className="px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800 text-xs font-bold">
-                    {activeCount} activos
-                  </span>
-                  <span className="text-xs text-slate-400">
-                    ({vehicles.length} en base de datos)
-                  </span>
-                </div>
-                <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-                  Autonet Usados Seleccionados • Neuquén
-                </p>
-              </div>
-
-              {/* Indicadores rápidos de stock */}
-              <div className="flex items-center gap-2 sm:gap-3 overflow-x-auto pb-1 sm:pb-0">
-                <button
-                  onClick={() => setFilters({ ...filters, estadoComercial: 'activo' })}
-                  className={`px-3 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 transition-colors ${
-                    filters.estadoComercial === 'activo'
-                      ? 'bg-blue-50 text-blue-800 border-blue-300 ring-2 ring-blue-100'
-                      : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-                  }`}
-                  title="Mostrar únicamente unidades activas presentes en stock"
-                >
-                  <span className="w-2 h-2 rounded-full bg-blue-500"></span>
-                  <span>{activeCount} Activos</span>
-                </button>
-
-                <button
-                  onClick={() => setFilters({ ...filters, estadoComercial: 'Disponible' })}
-                  className={`px-3 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 transition-colors ${
-                    filters.estadoComercial === 'Disponible'
-                      ? 'bg-emerald-50 text-emerald-800 border-emerald-300 ring-2 ring-emerald-100'
-                      : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-                  }`}
-                >
-                  <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                  <span>{availableCount} Disponibles</span>
-                </button>
-
-                <button
-                  onClick={() => setFilters({ ...filters, estadoComercial: 'Reservado' })}
-                  className={`px-3 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 transition-colors ${
-                    filters.estadoComercial === 'Reservado'
-                      ? 'bg-amber-50 text-amber-800 border-amber-300 ring-2 ring-amber-100'
-                      : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-                  }`}
-                >
-                  <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-                  <span>{reservedCount} Reservados</span>
-                </button>
-
-                <button
-                  onClick={() => setFilters({ ...filters, estadoComercial: 'vendidas_propias' })}
-                  className={`px-3 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 transition-colors ${
-                    filters.estadoComercial === 'vendidas_propias'
-                      ? 'bg-emerald-50 text-emerald-900 border-emerald-400 ring-2 ring-emerald-100'
-                      : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-                  }`}
-                  title="Unidades vendidas registradas como propias"
-                >
-                  <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
-                  <span>{mySalesCount} Mis Ventas</span>
-                </button>
-              </div>
+        {/* Toast Notification */}
+        {toastMessage && (
+          <div className="fixed bottom-5 right-5 z-50 animate-in slide-in-from-bottom-5 fade-in duration-200">
+            <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl bg-slate-900 text-white shadow-xl border border-slate-700 text-xs sm:text-sm font-medium max-w-md">
+              {toastMessage.type === 'success' && <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />}
+              {toastMessage.type === 'info' && <Sparkles className="w-5 h-5 text-blue-400 shrink-0" />}
+              {toastMessage.type === 'warn' && <AlertCircle className="w-5 h-5 text-amber-400 shrink-0" />}
+              <span>{toastMessage.text}</span>
             </div>
-
-            {/* Barra de Filtros y Buscador */}
-            <StockFiltersBar
-              filters={filters}
-              onFilterChange={setFilters}
-              onResetFilters={resetFilters}
-              availableVehicles={vehicles}
-              totalResults={sortedVehicles.length}
-            />
-
-            {/* Barra de Herramientas: Conteo de resultados, Selector de vista (Tarjetas/Tabla) y Orden */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white px-4 py-3 rounded-xl border border-slate-200/90 shadow-xs">
-              <div className="text-xs sm:text-sm font-semibold text-slate-700">
-                Mostrando <strong className="text-blue-700">{sortedVehicles.length}</strong> resultados
-                {filters.estadoComercial && filters.estadoComercial !== 'activo' && (
-                  <span className="text-slate-400 font-normal ml-1">
-                    (Filtro: <em>{filters.estadoComercial}</em>)
-                  </span>
-                )}
-              </div>
-
-              <div className="flex items-center gap-3 justify-between sm:justify-end">
-                {/* Selector de Orden */}
-                <div className="flex items-center gap-1.5 text-xs text-slate-600">
-                  <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
-                  <span className="hidden md:inline font-medium">Ordenar:</span>
-                  <select
-                    id="stock-sort-select"
-                    value={sortBy}
-                    onChange={(e) => setSortBy(e.target.value as any)}
-                    className="bg-slate-50 text-slate-800 text-xs font-semibold rounded-lg border border-slate-200 px-2.5 py-1.5 outline-none focus:border-blue-500"
-                  >
-                    <option value="disponibles_primero">Disponibles primero (Default)</option>
-                    <option value="precio_asc">Menor precio</option>
-                    <option value="precio_desc">Mayor precio</option>
-                    <option value="km_asc">Menor kilometraje</option>
-                    <option value="anio_desc">Año más nuevo</option>
-                  </select>
-                </div>
-
-                {/* Alternar Vista Tarjetas / Tabla */}
-                <div className="flex items-center bg-slate-100 p-1 rounded-lg border border-slate-200">
-                  <button
-                    id="view-mode-cards-btn"
-                    onClick={() => setViewMode('cards')}
-                    className={`p-1.5 rounded-md transition-colors ${
-                      viewMode === 'cards'
-                        ? 'bg-white text-blue-600 shadow-xs font-bold'
-                        : 'text-slate-500 hover:text-slate-800'
-                    }`}
-                    title="Vista de Tarjetas"
-                  >
-                    <LayoutGrid className="w-4 h-4" />
-                  </button>
-                  <button
-                    id="view-mode-table-btn"
-                    onClick={() => setViewMode('table')}
-                    className={`p-1.5 rounded-md transition-colors ${
-                      viewMode === 'table'
-                        ? 'bg-white text-blue-600 shadow-xs font-bold'
-                        : 'text-slate-500 hover:text-slate-800'
-                    }`}
-                    title="Vista de Tabla"
-                  >
-                    <List className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Listado de Vehículos o Estado Vacío */}
-            {sortedVehicles.length === 0 ? (
-              <div className="bg-white rounded-2xl p-12 text-center border border-slate-200">
-                <Car className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-                <h3 className="text-base font-bold text-slate-800">
-                  No se encontraron unidades con los filtros seleccionados
-                </h3>
-                <p className="text-xs text-slate-500 max-w-md mx-auto mt-1 mb-4">
-                  Pruebe modificando los valores de año, kilometraje o precio, o limpie los filtros para ver todas las unidades disponibles.
-                </p>
-                <button
-                  onClick={resetFilters}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-colors shadow-xs"
-                >
-                  <RotateCcw className="w-4 h-4" />
-                  <span>Restablecer filtros</span>
-                </button>
-              </div>
-            ) : viewMode === 'cards' ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-                {sortedVehicles.map((vehicle) => (
-                  <VehicleCard
-                    key={vehicle.id}
-                    vehicle={vehicle}
-                    onSelect={setSelectedVehicle}
-                    onStatusChange={handleStatusChange}
-                    onQuote={handleOpenQuote}
-                    onOpenMarkAsSold={handleOpenMarkAsSold}
-                  />
-                ))}
-              </div>
-            ) : (
-              <VehicleTable
-                vehicles={sortedVehicles}
-                onSelect={setSelectedVehicle}
-                onStatusChange={handleStatusChange}
-                onQuote={handleOpenQuote}
-                onOpenMarkAsSold={handleOpenMarkAsSold}
-              />
-            )}
           </div>
         )}
 
-        {/* VISTA 2: MIS VENTAS */}
-        {currentTab === 'ventas' && (
-          <MySalesView
-            vehicles={vehicles}
-            onSelectVehicle={setSelectedVehicle}
+        {/* Barra de Navegación Principal Autonet */}
+        <Navbar
+          currentTab={currentTab}
+          onSelectTab={setCurrentTab}
+          availableCount={stockCounts.disponible}
+          totalCount={stockCounts.todos}
+          mySalesCount={stockCounts.misVentas}
+        />
+
+        {/* Contenido Principal */}
+        <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-6">
+          
+          {/* VISTA 1: STOCK PRINCIPAL */}
+          {currentTab === 'stock' && (
+            <div className="space-y-4 animate-in fade-in duration-150">
+              
+              {/* Banner Superior Autonet con Jerarquía Clara */}
+              <div className="bg-white rounded-xl p-4 sm:p-5 border border-slate-200/90 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2.5">
+                    <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight font-sans">
+                      Stock de Usados
+                    </h1>
+                    <span className="px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 text-xs font-bold">
+                      {stockCounts.activo} activos
+                    </span>
+                    <span className="text-xs text-slate-400 font-medium">
+                      ({stockCounts.todos} total histórico)
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1 font-medium">
+                    Autonet Usados Seleccionados • Neuquén y Río Negro
+                  </p>
+                </div>
+
+                {/* Métricas rápidas conectadas a los filtros comerciales */}
+                <div className="flex items-center gap-2 sm:gap-2.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
+                  <button
+                    type="button"
+                    onClick={() => setFilters((prev) => ({ ...prev, estadoComercial: 'activo' }))}
+                    className={`px-3 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                      filters.estadoComercial === 'activo'
+                        ? 'bg-blue-50 text-blue-800 border-blue-300 ring-2 ring-blue-100 shadow-2xs'
+                        : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                    }`}
+                    title="Stock Activo (Disponibles + Reservados)"
+                  >
+                    <span className="w-2 h-2 rounded-full bg-blue-600"></span>
+                    <span>{stockCounts.activo} Activos</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setFilters((prev) => ({ ...prev, estadoComercial: 'Disponible' }))}
+                    className={`px-3 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                      filters.estadoComercial === 'Disponible'
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-300 ring-2 ring-emerald-100 shadow-2xs'
+                        : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                    <span>{stockCounts.disponible} Disponibles</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setFilters((prev) => ({ ...prev, estadoComercial: 'Reservado' }))}
+                    className={`px-3 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                      filters.estadoComercial === 'Reservado'
+                        ? 'bg-amber-50 text-amber-800 border-amber-300 ring-2 ring-amber-100 shadow-2xs'
+                        : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                    <span>{stockCounts.reservado} Reservados</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setFilters((prev) => ({ ...prev, estadoComercial: 'vendidas_propias' }))}
+                    className={`px-3 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                      filters.estadoComercial === 'vendidas_propias'
+                        ? 'bg-teal-50 text-teal-800 border-teal-300 ring-2 ring-teal-100 shadow-2xs'
+                        : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                    }`}
+                    title="Unidades vendidas por Gaspar Nicolau"
+                  >
+                    <span className="w-2 h-2 rounded-full bg-teal-600"></span>
+                    <span>{stockCounts.misVentas} Mis Ventas</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Barra de Filtros y Buscador */}
+              <StockFiltersBar
+                filters={filters}
+                onFilterChange={setFilters}
+                onResetFilters={resetFilters}
+                availableVehicles={vehicles}
+                totalResults={sortedVehicles.length}
+              />
+
+              {/* Barra de Herramientas: Resultados, Selector de vista y Orden */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white px-4 py-3 rounded-xl border border-slate-200/90 shadow-xs">
+                <div className="text-xs sm:text-sm font-semibold text-slate-700">
+                  Mostrando <strong className="text-blue-700 font-bold">{sortedVehicles.length}</strong> resultados
+                  {commercialLabel && filters.estadoComercial !== 'activo' && (
+                    <span className="text-slate-500 font-normal ml-1.5">
+                      (Filtro: <strong className="text-slate-800">{commercialLabel}</strong>)
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-3 justify-between sm:justify-end">
+                  {/* Selector de Orden */}
+                  <div className="flex items-center gap-1.5 text-xs text-slate-600">
+                    <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
+                    <span className="hidden md:inline font-medium">Ordenar:</span>
+                    <select
+                      id="stock-sort-select"
+                      value={sortBy}
+                      onChange={(e) => setSortBy(e.target.value as any)}
+                      className="bg-slate-50 text-slate-800 text-xs font-bold rounded-lg border border-slate-200 px-2.5 py-1.5 outline-none focus:border-blue-600"
+                    >
+                      <option value="disponibles_primero">Disponibles primero (Default)</option>
+                      <option value="precio_asc">Menor precio</option>
+                      <option value="precio_desc">Mayor precio</option>
+                      <option value="km_asc">Menor kilometraje</option>
+                      <option value="anio_desc">Año más nuevo</option>
+                    </select>
+                  </div>
+
+                  {/* Alternar Vista Tarjetas / Tabla */}
+                  <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                    <button
+                      id="view-mode-cards-btn"
+                      onClick={() => setViewMode('cards')}
+                      className={`p-1.5 rounded-md transition-colors cursor-pointer ${
+                        viewMode === 'cards'
+                          ? 'bg-white text-blue-700 shadow-xs font-bold'
+                          : 'text-slate-500 hover:text-slate-900'
+                      }`}
+                      title="Vista Cuadrícula de Tarjetas"
+                    >
+                      <Grid className="w-4 h-4" />
+                    </button>
+                    <button
+                      id="view-mode-table-btn"
+                      onClick={() => setViewMode('table')}
+                      className={`p-1.5 rounded-md transition-colors cursor-pointer ${
+                        viewMode === 'table'
+                          ? 'bg-white text-blue-700 shadow-xs font-bold'
+                          : 'text-slate-500 hover:text-slate-900'
+                      }`}
+                      title="Vista Tabla Resumen"
+                    >
+                      <List className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* LISTADO DE VEHÍCULOS (Consumen exactamente la misma colección sortedVehicles) */}
+              {sortedVehicles.length === 0 ? (
+                <div className="bg-white rounded-xl border border-dashed border-slate-300 p-12 text-center">
+                  <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-3">
+                    <AlertCircle className="w-6 h-6" />
+                  </div>
+                  <h3 className="text-base font-bold text-slate-800 mb-1">
+                    No se encontraron vehículos con los filtros aplicados
+                  </h3>
+                  <p className="text-xs text-slate-500 max-w-sm mx-auto mb-4">
+                    Intente buscar con otros términos o restablezca los filtros para ver todo el stock activo.
+                  </p>
+                  <button
+                    onClick={resetFilters}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg transition-colors shadow-xs"
+                  >
+                    Restablecer Filtros
+                  </button>
+                </div>
+              ) : viewMode === 'cards' ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5">
+                  {sortedVehicles.map((vehicle) => (
+                    <VehicleCard
+                      key={vehicle.id}
+                      vehicle={vehicle}
+                      onSelect={setSelectedVehicle}
+                      onStatusChange={handleStatusChange}
+                      onQuote={handleOpenQuote}
+                      onOpenMarkAsSold={handleOpenMarkAsSold}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <VehicleTable
+                  vehicles={sortedVehicles}
+                  onSelect={setSelectedVehicle}
+                  onStatusChange={handleStatusChange}
+                  onQuote={handleOpenQuote}
+                  onOpenMarkAsSold={handleOpenMarkAsSold}
+                />
+              )}
+            </div>
+          )}
+
+          {/* VISTA 2: MIS VENTAS */}
+          {currentTab === 'ventas' && (
+            <MySalesView
+              vehicles={vehicles}
+              onSelectVehicle={setSelectedVehicle}
+              onOpenMarkAsSold={handleOpenMarkAsSold}
+              onNavigateToStock={() => setCurrentTab('stock')}
+            />
+          )}
+
+          {/* VISTA 3: ACTUALIZAR STOCK (IMPORTAR PDF) */}
+          {currentTab === 'actualizar' && (
+            <UpdateStockView
+              currentStock={vehicles}
+              onUpdateCompleted={(fileName) => {
+                showToast(`Actualización completada desde "${fileName}".`, 'success');
+                setCurrentTab('stock');
+              }}
+              onCancel={() => setCurrentTab('stock')}
+            />
+          )}
+
+          {/* VISTA 4: HISTORIAL DE ACTUALIZACIONES */}
+          {currentTab === 'historial' && (
+            <UpdateHistoryView />
+          )}
+
+          {/* VISTAS 5, 6, 7: MÓDULOS FUTUROS Y CONFIGURACIÓN */}
+          {(currentTab === 'cotizaciones' || currentTab === 'presupuestos' || currentTab === 'configuracion') && (
+            <FutureModulesView
+              type={currentTab}
+              vehicles={vehicles}
+              onStockReset={() => setVehicles(stockService.getAllVehicles())}
+              onQuoteVehicle={handleOpenQuote}
+              onGoToUpdateStock={() => setCurrentTab('actualizar')}
+            />
+          )}
+        </main>
+
+        {/* Modal Ficha Completa del Vehículo */}
+        {selectedVehicle && (
+          <VehicleDetailModal
+            vehicle={selectedVehicle}
+            onClose={() => setSelectedVehicle(null)}
+            onStatusChange={handleStatusChange}
+            onOpenQuote={handleOpenQuote}
             onOpenMarkAsSold={handleOpenMarkAsSold}
-            onNavigateToStock={() => setCurrentTab('stock')}
+            onUpdateVehicleTableValue={handleUpdateVehicleTableValue}
           />
         )}
 
-        {/* VISTA 3: ACTUALIZAR STOCK (IMPORTAR PDF) */}
-        {currentTab === 'actualizar' && (
-          <UpdateStockView
-            currentStock={vehicles}
-            onUpdateCompleted={(fileName) => {
-              showToast(`Actualización completada desde "${fileName}".`, 'success');
-              setCurrentTab('stock');
+        {/* Modal de Cotización de Vehículo y Transferencia Estimada DNRPA */}
+        {quoteVehicle && (
+          <VehicleQuoteModal
+            vehicle={quoteVehicle}
+            onClose={() => setQuoteVehicle(null)}
+            onUpdateVehicleTableValue={handleUpdateVehicleTableValue}
+            onOpenBudget={(budget) => setActiveBudget(budget)}
+          />
+        )}
+
+        {/* Modal de Presupuesto Formal (Vista previa y acciones) */}
+        {activeBudget && (
+          <BudgetModal
+            budget={activeBudget}
+            onClose={() => setActiveBudget(null)}
+            onUpdateClientData={(clientName, clientPhone) => {
+              setActiveBudget((prev) =>
+                prev
+                  ? {
+                      ...prev,
+                      datosCliente: { nombre: clientName, telefono: clientPhone },
+                    }
+                  : null
+              );
             }}
-            onCancel={() => setCurrentTab('stock')}
           />
         )}
 
-        {/* VISTA 4: HISTORIAL DE ACTUALIZACIONES */}
-        {currentTab === 'historial' && (
-          <UpdateHistoryView />
-        )}
-
-        {/* VISTAS 5, 6, 7: MÓDULOS FUTUROS Y CONFIGURACIÓN */}
-        {(currentTab === 'cotizaciones' || currentTab === 'presupuestos' || currentTab === 'configuracion') && (
-          <FutureModulesView
-            type={currentTab}
-            vehicles={vehicles}
-            onStockReset={() => setVehicles(stockService.getAllVehicles())}
-            onQuoteVehicle={handleOpenQuote}
-            onGoToUpdateStock={() => setCurrentTab('actualizar')}
+        {/* Modal para Registrar o Gestionar Venta */}
+        {soldModalVehicle && (
+          <MarkAsSoldModal
+            vehicle={soldModalVehicle}
+            onClose={() => setSoldModalVehicle(null)}
+            onConfirm={handleConfirmSale}
+            onRevert={handleRevertSale}
           />
         )}
-      </main>
-
-      {/* Modal Ficha Completa del Vehículo */}
-      {selectedVehicle && (
-        <VehicleDetailModal
-          vehicle={selectedVehicle}
-          onClose={() => setSelectedVehicle(null)}
-          onStatusChange={handleStatusChange}
-          onOpenQuote={handleOpenQuote}
-          onOpenMarkAsSold={handleOpenMarkAsSold}
-          onUpdateVehicleTableValue={handleUpdateVehicleTableValue}
-        />
-      )}
-
-      {/* Modal de Cotización de Vehículo y Transferencia Estimada DNRPA */}
-      {quoteVehicle && (
-        <VehicleQuoteModal
-          vehicle={quoteVehicle}
-          onClose={() => setQuoteVehicle(null)}
-          onUpdateVehicleTableValue={handleUpdateVehicleTableValue}
-        />
-      )}
-
-      {/* Modal para Registrar o Gestionar Venta */}
-      {soldModalVehicle && (
-        <MarkAsSoldModal
-          vehicle={soldModalVehicle}
-          onClose={() => setSoldModalVehicle(null)}
-          onConfirm={handleConfirmSale}
-          onRevert={handleRevertSale}
-        />
-      )}
-    </div>
+      </div>
+    </>
   );
 }
