@@ -59,11 +59,13 @@ export const BudgetModal: React.FC<BudgetModalProps> = ({
       <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[96vh] flex flex-col overflow-hidden border border-slate-200">
         
         {/* Barra superior de control */}
-        <div className="px-5 py-3.5 bg-slate-900 text-white flex items-center justify-between shrink-0">
+        <div className="px-5 py-3.5 bg-white text-slate-900 border-b border-slate-200 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2">
-            <FileText className="w-5 h-5 text-blue-400" />
-            <span className="font-bold text-sm tracking-tight">Presupuesto Formal Autonet</span>
-            <span className="text-xs px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 font-mono border border-blue-500/30">
+            <div className="w-7 h-7 rounded-lg bg-red-50 text-red-600 border border-red-200 flex items-center justify-center">
+              <FileText className="w-4 h-4" />
+            </div>
+            <span className="font-bold text-sm tracking-tight text-slate-900">Presupuesto Formal Autonet</span>
+            <span className="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-mono border border-slate-200">
               {budget.numeroPresupuesto}
             </span>
           </div>
@@ -72,7 +74,7 @@ export const BudgetModal: React.FC<BudgetModalProps> = ({
             <button
               type="button"
               onClick={handleCopyWhatsApp}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold text-xs transition-colors shadow-xs"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs transition-colors shadow-xs cursor-pointer"
               title="Copiar texto para WhatsApp"
             >
               {copiedWhatsApp ? <Check className="w-3.5 h-3.5 text-white" /> : <Share2 className="w-3.5 h-3.5" />}
@@ -82,7 +84,7 @@ export const BudgetModal: React.FC<BudgetModalProps> = ({
             <button
               type="button"
               onClick={handlePrint}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-bold text-xs transition-colors shadow-xs"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-bold text-xs transition-colors shadow-xs cursor-pointer"
               title="Imprimir o guardar como PDF (1 hoja A4)"
             >
               <Printer className="w-3.5 h-3.5 text-white" />
@@ -92,7 +94,7 @@ export const BudgetModal: React.FC<BudgetModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors ml-1"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors ml-1 cursor-pointer"
               title="Cerrar"
             >
               <X className="w-5 h-5" />
@@ -174,6 +176,7 @@ export const BudgetModal: React.FC<BudgetModalProps> = ({
               validUntil={budget.fechaVencimiento}
               clientName={clientName}
               clientPhone={clientPhone}
+              advisor={budget.datosAsesor}
             />
           </div>
         </div>

@@ -16,7 +16,7 @@ export const ADVISOR_INFO: AdvisorInfo = {
   nombre: 'Gaspar Nicolau',
   cargo: 'Asesor comercial Autonet',
   telefono: '2994290620',
-  telefonoFormateado: '299 429-0620',
+  telefonoFormateado: '2994290620',
   direccion: 'Felix San Martin, 1650',
   ciudad: 'NEUQUEN',
   provincia: 'Neuquén',

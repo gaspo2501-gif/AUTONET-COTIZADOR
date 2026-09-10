@@ -40,23 +40,25 @@ export const Navbar: React.FC<NavbarProps> = ({
   };
 
   return (
-    <header className="sticky top-0 z-40 bg-slate-900 border-b border-slate-800 text-white shadow-md">
+    <header className="sticky top-0 z-40 bg-white border-b border-slate-200 text-slate-800 shadow-xs">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           
           {/* Logo & Marca Autonet */}
           <div className="flex items-center gap-3 cursor-pointer" onClick={() => handleTabClick('stock')}>
-            <div className="w-10 h-10 rounded-lg bg-blue-600 flex items-center justify-center shadow-inner font-black text-xl text-white tracking-wider">
+            <div className="w-10 h-10 rounded-lg bg-red-600 flex items-center justify-center shadow-xs font-black text-xl text-white tracking-wider">
               <Car className="w-6 h-6 text-white" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="font-extrabold text-lg tracking-tight text-white">AUTONET</span>
-                <span className="text-xs font-semibold px-2 py-0.5 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">
+                <span className="font-black text-xl tracking-tighter text-slate-950">
+                  auto<span className="text-red-600">net</span>
+                </span>
+                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded bg-red-50 text-red-700 border border-red-200">
                   COTIZADOR
                 </span>
               </div>
-              <p className="text-xs text-slate-400 font-medium hidden sm:block">
+              <p className="text-[11px] text-slate-500 font-medium hidden sm:block">
                 Gestión comercial de stock de usados
               </p>
             </div>
@@ -67,16 +69,18 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               id="nav-tab-stock"
               onClick={() => handleTabClick('stock')}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-semibold transition-colors ${
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold transition-colors cursor-pointer ${
                 currentTab === 'stock'
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                  ? 'bg-red-50 text-red-700 border-b-2 border-red-600 font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
               }`}
             >
               <Car className="w-4 h-4" />
               <span>Stock</span>
               <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${
-                currentTab === 'stock' ? 'bg-blue-800 text-white' : 'bg-slate-800 text-emerald-400 border border-emerald-500/30'
+                currentTab === 'stock' 
+                  ? 'bg-red-600 text-white' 
+                  : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
               }`}>
                 {availableCount} disp.
               </span>
@@ -85,16 +89,16 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               id="nav-tab-ventas"
               onClick={() => handleTabClick('ventas')}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-semibold transition-colors ${
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold transition-colors cursor-pointer ${
                 currentTab === 'ventas'
-                  ? 'bg-emerald-600 text-white shadow-sm'
-                  : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                  ? 'bg-red-50 text-red-700 border-b-2 border-red-600 font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
               }`}
             >
-              <UserCheck className="w-4 h-4 text-emerald-400" />
+              <UserCheck className="w-4 h-4 text-emerald-600" />
               <span>Mis Ventas</span>
               {mySalesCount > 0 && (
-                <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-emerald-700/80 text-white">
+                <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-teal-600 text-white">
                   {mySalesCount}
                 </span>
               )}
@@ -103,62 +107,62 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               id="nav-tab-actualizar"
               onClick={() => handleTabClick('actualizar')}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-semibold transition-colors ${
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold transition-colors cursor-pointer ${
                 currentTab === 'actualizar'
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                  ? 'bg-red-50 text-red-700 border-b-2 border-red-600 font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
               }`}
             >
-              <FileUp className="w-4 h-4 text-sky-400" />
+              <FileUp className="w-4 h-4 text-blue-600" />
               <span>Actualizar stock</span>
             </button>
 
             <button
               id="nav-tab-historial"
               onClick={() => handleTabClick('historial')}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-semibold transition-colors ${
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold transition-colors cursor-pointer ${
                 currentTab === 'historial'
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                  ? 'bg-red-50 text-red-700 border-b-2 border-red-600 font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
               }`}
             >
-              <History className="w-4 h-4 text-amber-400" />
+              <History className="w-4 h-4 text-amber-600" />
               <span>Actualizaciones</span>
             </button>
 
             <button
               id="nav-tab-cotizaciones"
               onClick={() => handleTabClick('cotizaciones')}
-              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold transition-colors cursor-pointer ${
                 currentTab === 'cotizaciones'
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                  ? 'bg-red-50 text-red-700 border-b-2 border-red-600 font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
               }`}
             >
-              <Calculator className="w-4 h-4 text-emerald-400" />
+              <Calculator className="w-4 h-4 text-slate-700" />
               <span>Cotizaciones</span>
             </button>
 
             <button
               id="nav-tab-presupuestos"
               onClick={() => handleTabClick('presupuestos')}
-              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold transition-colors cursor-pointer ${
                 currentTab === 'presupuestos'
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                  ? 'bg-red-50 text-red-700 border-b-2 border-red-600 font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
               }`}
             >
-              <FileText className="w-4 h-4 text-violet-400" />
+              <FileText className="w-4 h-4 text-violet-600" />
               <span>Presupuestos</span>
             </button>
 
             <button
               id="nav-tab-configuracion"
               onClick={() => handleTabClick('configuracion')}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
                 currentTab === 'configuracion'
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                  ? 'bg-red-50 text-red-700 border-b-2 border-red-600 font-bold'
+                  : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100/70'
               }`}
             >
               <Settings className="w-4 h-4" />
@@ -169,13 +173,13 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Quick Advisor Info */}
           <div className="hidden sm:flex items-center gap-3">
             <div className="text-right">
-              <div className="text-xs font-bold text-slate-200">{ADVISOR_INFO.nombre}</div>
-              <div className="text-[11px] text-emerald-400 font-medium flex items-center justify-end gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              <div className="text-xs font-bold text-slate-900">{ADVISOR_INFO.nombre}</div>
+              <div className="text-[11px] text-red-600 font-semibold flex items-center justify-end gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-red-600"></span>
                 {ADVISOR_INFO.cargo}
               </div>
             </div>
-            <div className="w-9 h-9 rounded-full bg-blue-600 border border-blue-400 flex items-center justify-center text-xs font-black text-white shadow-xs">
+            <div className="w-9 h-9 rounded-full bg-slate-100 border border-slate-300 flex items-center justify-center text-xs font-black text-slate-800 shadow-2xs">
               GN
             </div>
           </div>
@@ -185,7 +189,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               id="mobile-menu-toggle"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+              className="p-2 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 cursor-pointer"
               aria-label="Abrir menú"
             >
               {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
@@ -196,34 +200,34 @@ export const Navbar: React.FC<NavbarProps> = ({
 
       {/* Mobile Menu Dropdown */}
       {mobileMenuOpen && (
-        <div className="lg:hidden bg-slate-900 border-b border-slate-800 px-4 pt-2 pb-4 space-y-1">
+        <div className="lg:hidden bg-white border-b border-slate-200 px-4 pt-2 pb-4 space-y-1 shadow-md">
           <button
             onClick={() => handleTabClick('stock')}
-            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium ${
-              currentTab === 'stock' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-800'
+            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium cursor-pointer ${
+              currentTab === 'stock' ? 'bg-red-50 text-red-700 font-bold' : 'text-slate-700 hover:bg-slate-100'
             }`}
           >
             <div className="flex items-center gap-2">
               <Car className="w-4 h-4" />
               <span>Stock ({totalCount} unidades)</span>
             </div>
-            <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold">
+            <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold">
               {availableCount} disp.
             </span>
           </button>
 
           <button
             onClick={() => handleTabClick('ventas')}
-            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium ${
-              currentTab === 'ventas' ? 'bg-emerald-600 text-white' : 'text-slate-300 hover:bg-slate-800'
+            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium cursor-pointer ${
+              currentTab === 'ventas' ? 'bg-red-50 text-red-700 font-bold' : 'text-slate-700 hover:bg-slate-100'
             }`}
           >
             <div className="flex items-center gap-2">
-              <UserCheck className="w-4 h-4 text-emerald-400" />
+              <UserCheck className="w-4 h-4 text-emerald-600" />
               <span>Mis Ventas (Control Comercial)</span>
             </div>
             {mySalesCount > 0 && (
-              <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-700 text-white font-bold">
+              <span className="text-xs px-2 py-0.5 rounded-full bg-teal-600 text-white font-bold">
                 {mySalesCount}
               </span>
             )}
@@ -231,48 +235,48 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           <button
             onClick={() => handleTabClick('actualizar')}
-            className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium ${
-              currentTab === 'actualizar' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-800'
+            className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium cursor-pointer ${
+              currentTab === 'actualizar' ? 'bg-red-50 text-red-700 font-bold' : 'text-slate-700 hover:bg-slate-100'
             }`}
           >
-            <FileUp className="w-4 h-4 text-sky-400" />
+            <FileUp className="w-4 h-4 text-blue-600" />
             <span>Actualizar stock (Importar PDF)</span>
           </button>
 
           <button
             onClick={() => handleTabClick('historial')}
-            className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium ${
-              currentTab === 'historial' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-800'
+            className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium cursor-pointer ${
+              currentTab === 'historial' ? 'bg-red-50 text-red-700 font-bold' : 'text-slate-700 hover:bg-slate-100'
             }`}
           >
-            <History className="w-4 h-4 text-amber-400" />
+            <History className="w-4 h-4 text-amber-600" />
             <span>Actualizaciones (Historial)</span>
           </button>
 
           <button
             onClick={() => handleTabClick('cotizaciones')}
-            className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium ${
-              currentTab === 'cotizaciones' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-800'
+            className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium cursor-pointer ${
+              currentTab === 'cotizaciones' ? 'bg-red-50 text-red-700 font-bold' : 'text-slate-700 hover:bg-slate-100'
             }`}
           >
-            <Calculator className="w-4 h-4 text-emerald-400" />
+            <Calculator className="w-4 h-4 text-slate-700" />
             <span>Cotizaciones</span>
           </button>
 
           <button
             onClick={() => handleTabClick('presupuestos')}
-            className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium ${
-              currentTab === 'presupuestos' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-800'
+            className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium cursor-pointer ${
+              currentTab === 'presupuestos' ? 'bg-red-50 text-red-700 font-bold' : 'text-slate-700 hover:bg-slate-100'
             }`}
           >
-            <FileText className="w-4 h-4 text-violet-400" />
+            <FileText className="w-4 h-4 text-violet-600" />
             <span>Presupuestos</span>
           </button>
 
           <button
             onClick={() => handleTabClick('configuracion')}
-            className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium ${
-              currentTab === 'configuracion' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-800'
+            className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium cursor-pointer ${
+              currentTab === 'configuracion' ? 'bg-red-50 text-red-700 font-bold' : 'text-slate-700 hover:bg-slate-100'
             }`}
           >
             <Settings className="w-4 h-4" />

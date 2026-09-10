@@ -14,7 +14,9 @@ import { normalizeMileage } from './utils/formatters';
 import { 
   calculateStockCounts, 
   applyStockFilters, 
-  validateVisibleVehiclesIntegrity 
+  validateVisibleVehiclesIntegrity,
+  normalizeCommercialStatus,
+  normalizeCommercialView 
 } from './utils/stockSelectors';
 
 import { Navbar, NavTab } from './components/Navbar';
@@ -177,26 +179,24 @@ export default function App() {
     return calculateStockCounts(vehicles);
   }, [vehicles]);
 
-  // Filtrado de vehículos reactivo e inmutable
-  const filteredVehicles = useMemo(() => {
-    return applyStockFilters(vehicles, filters);
-  }, [vehicles, filters]);
+  // Pipeline unificado y determinístico:
+  // allVehicles -> commercialView -> advancedFilters -> search -> sort -> visibleVehicles
+  const visibleVehicles = useMemo(() => {
+    const filtered = applyStockFilters(vehicles, filters);
 
-  // Ordenamiento de los vehículos filtrados
-  const sortedVehicles = useMemo(() => {
-    const list = [...filteredVehicles];
-
-    return list.sort((a, b) => {
+    return [...filtered].sort((a, b) => {
       // Prioridad de estado si sortBy es 'disponibles_primero'
       if (sortBy === 'disponibles_primero') {
-        const orderMap: Record<VehicleStatus, number> = {
+        const orderMap: Record<string, number> = {
           Disponible: 1,
           Reservado: 2,
           Vendido: 3,
           fuera_de_stock: 4,
         };
-        if (orderMap[a.estado] !== orderMap[b.estado]) {
-          return orderMap[a.estado] - orderMap[b.estado];
+        const stA = normalizeCommercialStatus(a.estado);
+        const stB = normalizeCommercialStatus(b.estado);
+        if (orderMap[stA] !== orderMap[stB]) {
+          return (orderMap[stA] || 99) - (orderMap[stB] || 99);
         }
         return b.anio - a.anio;
       }
@@ -208,21 +208,22 @@ export default function App() {
 
       return 0;
     });
-  }, [filteredVehicles, sortBy]);
+  }, [vehicles, filters, sortBy]);
 
-  // Validación de seguridad para prevenir regresiones en desarrollo (Requisito 30)
+  // Validación de seguridad para prevenir regresiones en tiempo de ejecución
   useEffect(() => {
-    validateVisibleVehiclesIntegrity(filters.estadoComercial || 'activo', sortedVehicles);
-  }, [filters.estadoComercial, sortedVehicles]);
+    validateVisibleVehiclesIntegrity(filters.estadoComercial || 'activo', visibleVehicles);
+  }, [filters.estadoComercial, visibleVehicles]);
 
   const commercialLabel = useMemo(() => {
-    switch (filters.estadoComercial) {
-      case 'Disponible': return 'Disponibles';
-      case 'Reservado': return 'Reservados';
-      case 'vendidas_propias': return 'Mis Ventas';
-      case 'vendidas_otros': return 'Vendidas por otros';
-      case 'fuera_de_stock': return 'Fuera de stock';
-      case 'todos': return 'Todos los estados';
+    const norm = normalizeCommercialView(filters.estadoComercial);
+    switch (norm) {
+      case 'available': return 'Disponibles';
+      case 'reserved': return 'Reservados';
+      case 'sold-self': return 'Mis Ventas';
+      case 'sold-other': return 'Vendidas por otros';
+      case 'historical': return 'Fuera de stock';
+      case 'all': return 'Todos los estados';
       default: return null;
     }
   }, [filters.estadoComercial]);
@@ -243,6 +244,7 @@ export default function App() {
             validUntil={activeBudget.fechaVencimiento}
             clientName={activeBudget.datosCliente?.nombre}
             clientPhone={activeBudget.datosCliente?.telefono}
+            advisor={activeBudget.datosAsesor}
           />
         )}
       </div>
@@ -361,13 +363,13 @@ export default function App() {
                 onFilterChange={setFilters}
                 onResetFilters={resetFilters}
                 availableVehicles={vehicles}
-                totalResults={sortedVehicles.length}
+                totalResults={visibleVehicles.length}
               />
 
               {/* Barra de Herramientas: Resultados, Selector de vista y Orden */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white px-4 py-3 rounded-xl border border-slate-200/90 shadow-xs">
                 <div className="text-xs sm:text-sm font-semibold text-slate-700">
-                  Mostrando <strong className="text-blue-700 font-bold">{sortedVehicles.length}</strong> resultados
+                  Mostrando <strong className="text-blue-700 font-bold">{visibleVehicles.length}</strong> resultados
                   {commercialLabel && filters.estadoComercial !== 'activo' && (
                     <span className="text-slate-500 font-normal ml-1.5">
                       (Filtro: <strong className="text-slate-800">{commercialLabel}</strong>)
@@ -424,8 +426,8 @@ export default function App() {
                 </div>
               </div>
 
-              {/* LISTADO DE VEHÍCULOS (Consumen exactamente la misma colección sortedVehicles) */}
-              {sortedVehicles.length === 0 ? (
+              {/* LISTADO DE VEHÍCULOS (Consumen exactamente la misma colección visibleVehicles) */}
+              {visibleVehicles.length === 0 ? (
                 <div className="bg-white rounded-xl border border-dashed border-slate-300 p-12 text-center">
                   <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-3">
                     <AlertCircle className="w-6 h-6" />
@@ -445,7 +447,7 @@ export default function App() {
                 </div>
               ) : viewMode === 'cards' ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5">
-                  {sortedVehicles.map((vehicle) => (
+                  {visibleVehicles.map((vehicle) => (
                     <VehicleCard
                       key={vehicle.id}
                       vehicle={vehicle}
@@ -458,7 +460,7 @@ export default function App() {
                 </div>
               ) : (
                 <VehicleTable
-                  vehicles={sortedVehicles}
+                  vehicles={visibleVehicles}
                   onSelect={setSelectedVehicle}
                   onStatusChange={handleStatusChange}
                   onQuote={handleOpenQuote}

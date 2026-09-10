@@ -8,31 +8,71 @@ import { normalizeMileage } from './formatters';
  * Garantiza total coherencia entre contadores, pestañas, grilla de tarjetas y tabla.
  */
 
+export type NormalizedCommercialStatus = 'Disponible' | 'Reservado' | 'Vendido' | 'fuera_de_stock';
+
+/**
+ * Normaliza cualquier estado comercial contemplando mayúsculas, minúsculas,
+ * espacios, guiones o variantes en inglés/español.
+ */
+export function normalizeCommercialStatus(status: any): NormalizedCommercialStatus {
+  if (!status) return 'Disponible';
+  const clean = String(status).trim().toLowerCase().replace(/[-_ ]+/g, '_');
+  if (clean === 'reservado' || clean === 'reserved') return 'Reservado';
+  if (clean === 'vendido' || clean === 'sold') return 'Vendido';
+  if (clean === 'fuera_de_stock' || clean === 'historical' || clean === 'historico' || clean === 'fuera_stock') return 'fuera_de_stock';
+  return 'Disponible';
+}
+
+export type CommercialViewKey = 
+  | 'active'
+  | 'available'
+  | 'reserved'
+  | 'sold-self'
+  | 'sold-other'
+  | 'historical'
+  | 'all';
+
+/**
+ * Normaliza cualquier vista comercial activa
+ */
+export function normalizeCommercialView(view?: any): CommercialViewKey {
+  if (!view) return 'active';
+  const v = String(view).trim().toLowerCase().replace(/[-_ ]+/g, '_');
+  if (v === 'reserved' || v === 'reservado' || v === 'reservados') return 'reserved';
+  if (v === 'available' || v === 'disponible' || v === 'disponibles') return 'available';
+  if (v === 'sold_self' || v === 'vendidas_propias' || v === 'mis_ventas' || v === 'ventas_propias' || v === 'sold-self') return 'sold-self';
+  if (v === 'sold_other' || v === 'vendidas_otros' || v === 'ventas_otros' || v === 'sold-other') return 'sold-other';
+  if (v === 'historical' || v === 'fuera_de_stock' || v === 'historico' || v === 'fuera_stock') return 'historical';
+  if (v === 'all' || v === 'todos' || v === 'todos_los_estados') return 'all';
+  return 'active';
+}
+
 export const isHistoricalVehicle = (v: Vehicle): boolean => {
-  return Boolean(v.isHistorical || v.estado === 'fuera_de_stock');
+  return Boolean(v.isHistorical || normalizeCommercialStatus(v.estado) === 'fuera_de_stock');
 };
 
 export const isActiveVehicle = (v: Vehicle): boolean => {
   if (isHistoricalVehicle(v)) return false;
-  return v.estado === 'Disponible' || v.estado === 'Reservado';
+  const s = normalizeCommercialStatus(v.estado);
+  return s === 'Disponible' || s === 'Reservado';
 };
 
 export const isAvailableVehicle = (v: Vehicle): boolean => {
   if (isHistoricalVehicle(v)) return false;
-  return v.estado === 'Disponible';
+  return normalizeCommercialStatus(v.estado) === 'Disponible';
 };
 
 export const isReservedVehicle = (v: Vehicle): boolean => {
   if (isHistoricalVehicle(v)) return false;
-  return v.estado === 'Reservado';
+  return normalizeCommercialStatus(v.estado) === 'Reservado';
 };
 
 export const isMySoldVehicle = (v: Vehicle): boolean => {
-  return v.estado === 'Vendido' && v.saleOwner === 'self';
+  return normalizeCommercialStatus(v.estado) === 'Vendido' && v.saleOwner === 'self';
 };
 
 export const isOtherSoldVehicle = (v: Vehicle): boolean => {
-  return v.estado === 'Vendido' && v.saleOwner === 'other';
+  return normalizeCommercialStatus(v.estado) === 'Vendido' && v.saleOwner === 'other';
 };
 
 export const isOutOfStockVehicle = (v: Vehicle): boolean => {
@@ -90,16 +130,17 @@ export const calculateStockCounts = (vehicles: Vehicle[]): StockCounts => {
     if (isOutOfStockVehicle(v)) {
       fueraStock++;
     } else {
-      if (v.estado === 'Disponible') {
+      const st = normalizeCommercialStatus(v.estado);
+      if (st === 'Disponible') {
         disponible++;
         activo++;
-      } else if (v.estado === 'Reservado') {
+      } else if (st === 'Reservado') {
         reservado++;
         activo++;
-      } else if (v.estado === 'Vendido') {
+      } else if (st === 'Vendido') {
         if (v.saleOwner === 'self') {
           misVentas++;
-        } else if (v.saleOwner === 'other') {
+        } else {
           ventasOtros++;
         }
       }
@@ -141,37 +182,37 @@ export const countActiveAdvancedFilters = (filters: StockFilters): number => {
 };
 
 /**
- * Filtra los vehículos mediante la cadena estricta:
+ * Filtra los vehículos mediante la cadena unificada y determinística:
  * allVehicles -> commercialView -> advancedFilters -> search
  */
 export const applyStockFilters = (
   vehicles: Vehicle[],
   filters: StockFilters
 ): Vehicle[] => {
-  const commercial = filters.estadoComercial || 'activo';
+  const normView = normalizeCommercialView(filters.estadoComercial);
 
   return vehicles.filter((v) => {
-    // 1. FILTRO COMERCIAL (Pestaña activa)
-    switch (commercial) {
-      case 'activo':
+    // 1. FILTRO COMERCIAL (Pestaña activa) - REGLA DETERMINÍSTICA ESTRICTA
+    switch (normView) {
+      case 'active':
         if (!isActiveVehicle(v)) return false;
         break;
-      case 'Disponible':
+      case 'available':
         if (!isAvailableVehicle(v)) return false;
         break;
-      case 'Reservado':
+      case 'reserved':
         if (!isReservedVehicle(v)) return false;
         break;
-      case 'vendidas_propias':
+      case 'sold-self':
         if (!isMySoldVehicle(v)) return false;
         break;
-      case 'vendidas_otros':
+      case 'sold-other':
         if (!isOtherSoldVehicle(v)) return false;
         break;
-      case 'fuera_de_stock':
+      case 'historical':
         if (!isOutOfStockVehicle(v)) return false;
         break;
-      case 'todos':
+      case 'all':
         // No restringe por estado comercial
         break;
       default:
@@ -238,22 +279,24 @@ export const applyStockFilters = (
 };
 
 /**
- * Validación de seguridad en runtime para detectar regresiones (Requisito 30)
+ * Validación de seguridad en runtime para garantizar que cuando se selecciona
+ * una vista comercial (ej: 'reserved'), no haya ninguna unidad discrepante.
  */
 export const validateVisibleVehiclesIntegrity = (
-  commercialView: CommercialFilter,
+  commercialView: string | undefined,
   visibleVehicles: Vehicle[]
 ): void => {
-  if (commercialView === 'Reservado') {
-    const invalid = visibleVehicles.filter((v) => v.estado !== 'Reservado' || v.isHistorical);
+  const norm = normalizeCommercialView(commercialView);
+  if (norm === 'reserved') {
+    const invalid = visibleVehicles.filter((v) => !isReservedVehicle(v));
     if (invalid.length > 0) {
       console.error(
-        `[AUTONET-FILTERS-INTEGRITY-ERROR] Vista Reservados contiene ${invalid.length} unidades que no son Reservadas o son históricas:`,
+        `[AUTONET-FILTERS-INTEGRITY-ERROR] Vista Reservados contiene ${invalid.length} unidades que no son Reservadas:`,
         invalid
       );
     }
-  } else if (commercialView === 'Disponible') {
-    const invalid = visibleVehicles.filter((v) => v.estado !== 'Disponible' || v.isHistorical);
+  } else if (norm === 'available') {
+    const invalid = visibleVehicles.filter((v) => !isAvailableVehicle(v));
     if (invalid.length > 0) {
       console.error(
         `[AUTONET-FILTERS-INTEGRITY-ERROR] Vista Disponibles contiene ${invalid.length} unidades que no son Disponibles:`,

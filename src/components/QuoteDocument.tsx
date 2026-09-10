@@ -61,8 +61,8 @@ export const QuoteDocument: React.FC<QuoteDocumentProps> = ({
   return (
     <div 
       id="quote-document-a4" 
-      className="bg-white text-slate-900 font-sans w-full max-w-[190mm] mx-auto p-8 box-border print:p-0 print:max-w-none"
-      style={{ minHeight: 'auto', maxHeight: '275mm' }}
+      className="quote-document bg-white text-slate-900 font-sans w-[210mm] max-w-[210mm] min-h-[297mm] max-h-[297mm] mx-auto p-[14mm] box-border flex flex-col justify-between shadow-xs print:shadow-none"
+      style={{ width: '210mm', minHeight: '297mm', maxHeight: '297mm' }}
     >
       {/* 1. ENCABEZADO AUTONET */}
       <header className="border-b-2 border-slate-900 pb-4 mb-6 flex items-start justify-between">
@@ -199,26 +199,26 @@ export const QuoteDocument: React.FC<QuoteDocumentProps> = ({
       </section>
 
       {/* 6. FIRMA DEL ASESOR COMERCIAL */}
-      <footer className="border-t-2 border-slate-900 pt-4 mt-auto">
+      <footer className="border-t-2 border-slate-900 pt-3.5 mt-auto">
         <div className="flex items-end justify-between">
           <div>
             <div className="font-bold text-sm text-slate-900">
-              {advisor.nombre}
+              {advisor?.nombre || 'Gaspar Nicolau'}
             </div>
             <div className="text-xs text-slate-600 font-medium">
-              {advisor.cargo}
+              {advisor?.cargo || 'Asesor comercial Autonet'}
             </div>
-            <div className="text-xs font-mono text-slate-700 mt-0.5">
-              {advisor.telefonoFormateado || advisor.telefono}
+            <div className="text-xs font-mono font-bold text-slate-800 mt-0.5">
+              2994290620
             </div>
             <div className="text-[11px] text-slate-500 mt-0.5">
-              {advisor.direccion}, {advisor.ciudad}, {advisor.provincia}, {advisor.pais}
+              Felix San Martin, 1650, NEUQUEN, Neuquén, Argentina
             </div>
           </div>
 
           <div className="text-right">
             <div className="text-[10px] text-slate-400 tracking-wider uppercase font-semibold">
-              Autonet Usados
+              Autonet Usados Seleccionados
             </div>
             <div className="text-xs font-bold text-slate-700">
               www.autonet.com.ar
