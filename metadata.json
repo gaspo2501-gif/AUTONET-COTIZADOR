@@ -1,6 +1,6 @@
 {
   "name": "Autonet Cotizador",
-  "description": "Sistema comercial de Autonet: gestión de stock de usados, cotizador de transferencia DNRPA (Neuquén y Río Negro) y generación de presupuestos formales para imprimir y WhatsApp.",
+  "description": "Sistema comercial de Autonet: gestión de stock de usados, cotizador de transferencia DNRPA (Neuquén y Río Negro), presupuestos formales y generación de boletos de compraventa PDF oficiales.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

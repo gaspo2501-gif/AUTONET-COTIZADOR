@@ -166,6 +166,7 @@ export const QuoteDocument: React.FC<QuoteDocumentProps> = ({
               <thead>
                 <tr className="bg-slate-100 text-slate-600 font-bold border-b border-slate-200">
                   <th className="py-2 px-3">Entidad</th>
+                  <th className="py-2 px-3">Monto Financiado</th>
                   <th className="py-2 px-3">Plazo</th>
                   <th className="py-2 px-3 text-right">Cuota Estimada</th>
                   <th className="py-2 px-3">Detalle</th>
@@ -175,11 +176,16 @@ export const QuoteDocument: React.FC<QuoteDocumentProps> = ({
                 {financingOptions.map((opt, index) => (
                   <tr key={index} className="hover:bg-slate-50/50">
                     <td className="py-2 px-3 font-bold text-slate-900">{opt.entidad}</td>
+                    <td className="py-2 px-3 font-mono text-slate-900">
+                      {opt.montoFinanciado && opt.montoFinanciado > 0
+                        ? formatCurrency(opt.montoFinanciado, vehicle.moneda || 'ARS')
+                        : '—'}
+                    </td>
                     <td className="py-2 px-3">{opt.cuotas} cuotas</td>
                     <td className="py-2 px-3 text-right font-mono font-bold text-slate-900">
                       aprox. {formatCurrency(opt.montoCuota, vehicle.moneda || 'ARS')}
                     </td>
-                    <td className="py-2 px-3 text-slate-500 text-[11px]">{opt.observaciones || '—'}</td>
+                    <td className="py-2 px-3 text-slate-500 text-[11px]">{opt.detalle || '—'}</td>
                   </tr>
                 ))}
               </tbody>

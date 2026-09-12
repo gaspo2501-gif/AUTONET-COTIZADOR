@@ -11,7 +11,8 @@ import {
   FileText,
   CreditCard,
   Plus,
-  Trash2
+  Trash2,
+  FileCheck2
 } from 'lucide-react';
 import { Vehicle, ProvinceTransfer } from '../types/stock';
 import { dnrpaService } from '../services/dnrpaService';
@@ -19,6 +20,7 @@ import { CommercialBudget, FinancingOption, quoteService } from '../services/quo
 import { formatCurrency } from '../utils/formatters';
 import { ADVISOR_INFO } from '../constants/advisor';
 import { BudgetModal } from './BudgetModal';
+import { BoletoModal } from './boleto/BoletoModal';
 
 interface VehicleQuoteModalProps {
   vehicle: Vehicle;
@@ -55,6 +57,7 @@ export const VehicleQuoteModal: React.FC<VehicleQuoteModalProps> = ({
     {
       id: 'opc-1',
       entidad: 'CREDINET',
+      montoFinanciado: 0,
       cuotas: 24,
       montoCuota: 0,
       detalle: 'Cuota fija en pesos',
@@ -65,6 +68,7 @@ export const VehicleQuoteModal: React.FC<VehicleQuoteModalProps> = ({
   const [copiedShare, setCopiedShare] = useState(false);
   const [savedLocally, setSavedLocally] = useState(false);
   const [activeBudget, setActiveBudget] = useState<CommercialBudget | null>(null);
+  const [isBoletoOpen, setIsBoletoOpen] = useState(false);
 
   // Parse numérico del valor de tabla ingresado
   const parsedTableValue = Math.max(0, parseInt(tableValueInput.replace(/\D/g, ''), 10) || 0);
@@ -89,6 +93,7 @@ export const VehicleQuoteModal: React.FC<VehicleQuoteModalProps> = ({
       {
         id: `opc-${Date.now()}`,
         entidad: 'BNA',
+        montoFinanciado: 0,
         cuotas: 36,
         montoCuota: 0,
         detalle: '',
@@ -490,7 +495,7 @@ ${ADVISOR_INFO.nombre} | ${ADVISOR_INFO.cargo}
                         )}
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2">
                         {/* Entidad */}
                         <div>
                           <label className="block text-[10px] font-bold text-slate-600 mb-0.5 uppercase">
@@ -519,6 +524,24 @@ ${ADVISOR_INFO.nombre} | ${ADVISOR_INFO.cargo}
                               </button>
                             ))}
                           </div>
+                        </div>
+
+                        {/* Monto Financiado */}
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-600 mb-0.5 uppercase">
+                            Monto Financiado ($)
+                          </label>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            value={opc.montoFinanciado && opc.montoFinanciado > 0 ? new Intl.NumberFormat('es-AR').format(opc.montoFinanciado) : ''}
+                            onChange={(e) => {
+                              const raw = e.target.value.replace(/\D/g, '');
+                              handleUpdateFinancingOption(opc.id, 'montoFinanciado', raw ? Number(raw) : 0);
+                            }}
+                            placeholder="Ej. 10.000.000"
+                            className="w-full px-2 py-1.5 rounded-md border border-slate-300 text-xs font-mono font-bold text-blue-900 bg-white"
+                          />
                         </div>
 
                         {/* Cuotas */}
@@ -600,6 +623,18 @@ ${ADVISOR_INFO.nombre} | ${ADVISOR_INFO.cargo}
                 <span>GENERAR PRESUPUESTO</span>
               </button>
 
+              {/* Botón GENERAR BOLETO */}
+              <button
+                type="button"
+                id="btn-quote-generar-boleto"
+                onClick={() => setIsBoletoOpen(true)}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-black text-xs transition-colors shadow-xs cursor-pointer"
+                title="Generar Boleto Oficial Autonet de 2 páginas"
+              >
+                <FileCheck2 className="w-4 h-4" />
+                <span>GENERAR BOLETO</span>
+              </button>
+
               {hasValidTableValue && (
                 <button
                   type="button"
@@ -629,6 +664,27 @@ ${ADVISOR_INFO.nombre} | ${ADVISOR_INFO.cargo}
         <BudgetModal
           budget={activeBudget}
           onClose={() => setActiveBudget(null)}
+        />
+      )}
+
+      {/* Modal de Boleto de Compraventa Oficial */}
+      {isBoletoOpen && (
+        <BoletoModal
+          isOpen={isBoletoOpen}
+          onClose={() => setIsBoletoOpen(false)}
+          vehicle={vehicle}
+          budget={activeBudget || quoteService.createBudget({
+            vehicle,
+            dnrpaTableValue: parsedTableValue,
+            province,
+            financiacion: llevaFinanciacion
+              ? {
+                  llevaFinanciacion: true,
+                  opciones: opcionesFinanciacion.filter((o) => o.montoCuota > 0),
+                }
+              : undefined,
+          })}
+          financingAlternatives={llevaFinanciacion ? opcionesFinanciacion.filter((o) => o.montoCuota > 0) : []}
         />
       )}
     </>

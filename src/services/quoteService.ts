@@ -18,6 +18,7 @@ export interface ClientData {
 export interface FinancingOption {
   id: string;
   entidad: string;
+  montoFinanciado?: number;
   cuotas: number;
   montoCuota: number;
   detalle?: string;

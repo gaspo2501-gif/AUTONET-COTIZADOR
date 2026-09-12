@@ -21,10 +21,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 24
 
@@ -32,13 +32,27 @@ jobs:
         uses: actions/configure-pages@v5
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Build
         run: npm run build
 
+      - name: Verify Official Template PDFs Integrity
+        run: |
+          IRUNA_HASH="47e5a41c031739c6097a465c671d51b1f0ffac56987fb0297daa4e541c1fcaf3"
+          MIRAGE_HASH="8fc91b44b9dafd0ea75b8987f1ac19d66550278d01a642ea61a769ae952b859f"
+          OIL_BULL_HASH="cbc05697ee1c8a6c5059dae60a2754852b8160c6d039eebf2240a61ad3277e16"
+
+          echo "Verificando presencia y hashes en dist/templates/..."
+          sha256sum dist/templates/ORIGINAL_*.pdf
+
+          test "$(sha256sum dist/templates/ORIGINAL_IRUNA.pdf | cut -d ' ' -f1)" = "$IRUNA_HASH" || { echo "IRUNA SHA mismatch"; exit 1; }
+          test "$(sha256sum dist/templates/ORIGINAL_MIRAGE.pdf | cut -d ' ' -f1)" = "$MIRAGE_HASH" || { echo "MIRAGE SHA mismatch"; exit 1; }
+          test "$(sha256sum dist/templates/ORIGINAL_OIL_BULL.pdf | cut -d ' ' -f1)" = "$OIL_BULL_HASH" || { echo "OIL_BULL SHA mismatch"; exit 1; }
+          echo "Todos los PDFs oficiales en dist fueron verificados con éxito."
+
       - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v4
         with:
           path: ./dist
 

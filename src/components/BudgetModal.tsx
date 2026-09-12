@@ -7,10 +7,12 @@ import {
   FileText, 
   User,
   Phone,
-  Edit2
+  Edit2,
+  FileCheck2
 } from 'lucide-react';
 import { CommercialBudget, quoteService } from '../services/quoteService';
 import { QuoteDocument } from './QuoteDocument';
+import { BoletoModal } from './boleto/BoletoModal';
 
 interface BudgetModalProps {
   budget: CommercialBudget;
@@ -27,6 +29,7 @@ export const BudgetModal: React.FC<BudgetModalProps> = ({
   const [clientName, setClientName] = useState(budget.datosCliente.nombre || '');
   const [clientPhone, setClientPhone] = useState(budget.datosCliente.telefono || '');
   const [isEditingClient, setIsEditingClient] = useState(false);
+  const [isBoletoOpen, setIsBoletoOpen] = useState(false);
 
   const currentBudget: CommercialBudget = {
     ...budget,
@@ -189,6 +192,17 @@ export const BudgetModal: React.FC<BudgetModalProps> = ({
           <div className="flex items-center gap-2">
             <button
               type="button"
+              id="btn-budget-generar-boleto"
+              onClick={() => setIsBoletoOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-black text-xs transition-colors shadow-xs cursor-pointer"
+              title="Generar Boleto Oficial Autonet de 2 páginas con los datos de esta cotización"
+            >
+              <FileCheck2 className="w-3.5 h-3.5" />
+              <span>GENERAR BOLETO</span>
+            </button>
+
+            <button
+              type="button"
               onClick={handleCopyWhatsApp}
               className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition-colors"
             >
@@ -207,6 +221,17 @@ export const BudgetModal: React.FC<BudgetModalProps> = ({
         </div>
 
       </div>
+
+      {/* Modal de Boleto de Compraventa Oficial */}
+      {isBoletoOpen && (
+        <BoletoModal
+          isOpen={isBoletoOpen}
+          onClose={() => setIsBoletoOpen(false)}
+          vehicle={budget.vehiculo}
+          budget={currentBudget}
+          financingAlternatives={budget.financiacion?.opciones}
+        />
+      )}
     </div>
   );
 };
