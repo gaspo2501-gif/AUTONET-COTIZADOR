@@ -32,6 +32,12 @@ import { UpdateHistoryView } from './components/UpdateHistoryView';
 import { FutureModulesView } from './components/FutureModulesView';
 import { MarkAsSoldModal } from './components/MarkAsSoldModal';
 import { MySalesView } from './components/MySalesView';
+import { LoginModal } from './components/LoginModal';
+import { MigrationModal } from './components/MigrationModal';
+import { authService } from './services/authService';
+import { migrationService } from './services/migrationService';
+import { SyncStatus } from './services/firestoreService';
+import { User } from 'firebase/auth';
 
 const DEFAULT_FILTERS: StockFilters = {
   searchQuery: '',
@@ -64,6 +70,38 @@ export default function App() {
   const [activeBudget, setActiveBudget] = useState<CommercialBudget | null>(null);
   const [soldModalVehicle, setSoldModalVehicle] = useState<Vehicle | null>(null);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'info' | 'warn' } | null>(null);
+
+  // Estados de Firebase Auth y Sincronización
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>(() => stockService.getSyncStatus());
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [showMigrationModal, setShowMigrationModal] = useState(false);
+
+  // Suscripción al estado de Auth
+  useEffect(() => {
+    const unsubAuth = authService.subscribe((user, isInitializing) => {
+      if (isInitializing) return;
+      setCurrentUser(user);
+
+      // Si el usuario inició sesión, comprobar si necesita migración inicial
+      if (user) {
+        migrationService.checkMigrationNeeded(user.uid).then((needed) => {
+          if (needed) {
+            setShowMigrationModal(true);
+          }
+        });
+      }
+    });
+
+    const unsubSync = stockService.subscribeSyncStatus((status) => {
+      setSyncStatus(status);
+    });
+
+    return () => {
+      unsubAuth();
+      unsubSync();
+    };
+  }, []);
 
   // Suscripción reactiva al stockService
   useEffect(() => {
@@ -271,6 +309,13 @@ export default function App() {
           availableCount={stockCounts.disponible}
           totalCount={stockCounts.todos}
           mySalesCount={stockCounts.misVentas}
+          syncStatus={syncStatus}
+          user={currentUser}
+          onLoginClick={() => setShowLoginModal(true)}
+          onLogoutClick={() => {
+            authService.signOut();
+            showToast('Sesión cerrada. Modo local activado.', 'info');
+          }}
         />
 
         {/* Contenido Principal */}
@@ -505,6 +550,14 @@ export default function App() {
               onStockReset={() => setVehicles(stockService.getAllVehicles())}
               onQuoteVehicle={handleOpenQuote}
               onGoToUpdateStock={() => setCurrentTab('actualizar')}
+              onOpenMigrationModal={() => {
+                if (!currentUser) {
+                  setShowLoginModal(true);
+                } else {
+                  setShowMigrationModal(true);
+                }
+              }}
+              onOpenLoginModal={() => setShowLoginModal(true)}
             />
           )}
         </main>
@@ -556,6 +609,29 @@ export default function App() {
             onClose={() => setSoldModalVehicle(null)}
             onConfirm={handleConfirmSale}
             onRevert={handleRevertSale}
+          />
+        )}
+
+        {/* Modal de Inicio de Sesión Firebase */}
+        {showLoginModal && (
+          <LoginModal
+            onSuccess={() => {
+              setShowLoginModal(false);
+              showToast('Sesión iniciada en Firebase.', 'success');
+            }}
+            onCancel={() => setShowLoginModal(false)}
+          />
+        )}
+
+        {/* Modal de Migración a Cloud Firestore */}
+        {showMigrationModal && currentUser && (
+          <MigrationModal
+            userId={currentUser.uid}
+            onMigrationSuccess={(res) => {
+              showToast(`Migración exitosa: ${res.cloudCounts.todos} unidades sincronizadas con Cloud Firestore.`, 'success');
+              setShowMigrationModal(false);
+            }}
+            onClose={() => setShowMigrationModal(false)}
           />
         )}
       </div>

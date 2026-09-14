@@ -19,7 +19,12 @@ import {
   Share2,
   Search,
   Clock,
-  FileUp
+  FileUp,
+  Cloud,
+  CloudOff,
+  RefreshCw,
+  LogOut,
+  LogIn
 } from 'lucide-react';
 import { stockService } from '../services/stockService';
 import { quoteService, AdvisorSettings, CommercialBudget } from '../services/quoteService';
@@ -33,6 +38,8 @@ interface FutureModulesViewProps {
   onStockReset: () => void;
   onQuoteVehicle?: (vehicle: Vehicle) => void;
   onGoToUpdateStock?: () => void;
+  onOpenMigrationModal?: () => void;
+  onOpenLoginModal?: () => void;
 }
 
 export const FutureModulesView: React.FC<FutureModulesViewProps> = ({
@@ -41,6 +48,8 @@ export const FutureModulesView: React.FC<FutureModulesViewProps> = ({
   onStockReset,
   onQuoteVehicle,
   onGoToUpdateStock,
+  onOpenMigrationModal,
+  onOpenLoginModal,
 }) => {
   const [resetDone, setResetDone] = useState(false);
   const [importMessage, setImportMessage] = useState<string | null>(null);
@@ -486,6 +495,51 @@ export const FutureModulesView: React.FC<FutureModulesViewProps> = ({
                 {vehicles.filter((v) => v.estado !== 'Disponible').length}
               </span>
             </div>
+          </div>
+        </div>
+
+        {/* 2.5 SINCRONIZACIÓN Y NUBE (FIREBASE / CLOUD FIRESTORE) */}
+        <div className="mt-8 pt-5 border-t border-slate-200 space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-extrabold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+              <Cloud className="w-4 h-4 text-blue-600" />
+              <span>Sincronización Multidispositivo (Cloud Firestore)</span>
+            </h2>
+            <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
+              stockService.isUsingCloud()
+                ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                : 'bg-slate-100 text-slate-600 border border-slate-200'
+            }`}>
+              {stockService.isUsingCloud() ? 'Nube Activa' : 'Modo Local'}
+            </span>
+          </div>
+
+          <p className="text-xs text-slate-500">
+            Sincronice el stock comercial, estados, ventas e historial con Firebase para acceder desde PC laboral, celular o nuevos dispositivos sin perder datos.
+          </p>
+
+          <div className="flex flex-wrap items-center gap-3 pt-1">
+            {onOpenMigrationModal && (
+              <button
+                type="button"
+                onClick={onOpenMigrationModal}
+                className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-colors flex items-center gap-2 shadow-xs cursor-pointer"
+              >
+                <Cloud className="w-3.5 h-3.5" />
+                <span>Asistente de Migración a Firestore</span>
+              </button>
+            )}
+
+            {onOpenLoginModal && (
+              <button
+                type="button"
+                onClick={onOpenLoginModal}
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold border border-slate-200 transition-colors flex items-center gap-2 cursor-pointer"
+              >
+                <LogIn className="w-3.5 h-3.5" />
+                <span>Gestionar Sesión Firebase</span>
+              </button>
+            )}
           </div>
         </div>
 

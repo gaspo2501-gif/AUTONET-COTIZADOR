@@ -8,9 +8,17 @@ import {
   Settings, 
   Menu, 
   X,
-  UserCheck
+  UserCheck,
+  Cloud,
+  CloudOff,
+  RefreshCw,
+  AlertCircle,
+  LogOut,
+  LogIn
 } from 'lucide-react';
 import { ADVISOR_INFO } from '../constants/advisor';
+import { SyncStatus } from '../services/firestoreService';
+import { User } from 'firebase/auth';
 
 export type NavTab = 'stock' | 'ventas' | 'actualizar' | 'historial' | 'cotizaciones' | 'presupuestos' | 'configuracion';
 
@@ -20,6 +28,10 @@ interface NavbarProps {
   availableCount: number;
   totalCount: number;
   mySalesCount?: number;
+  syncStatus?: SyncStatus;
+  user?: User | null;
+  onLoginClick?: () => void;
+  onLogoutClick?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -28,6 +40,10 @@ export const Navbar: React.FC<NavbarProps> = ({
   availableCount,
   totalCount,
   mySalesCount = 0,
+  syncStatus = 'offline',
+  user = null,
+  onLoginClick,
+  onLogoutClick,
 }) => {
   const [menuOpen, setMenuOpen] = React.useState(false);
   const menuRef = React.useRef<HTMLDivElement>(null);
@@ -98,6 +114,34 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* DERECHA: Asesor + Avatar + Botón Menú Hamburguesa */}
           <div className="flex items-center gap-2 sm:gap-3 shrink-0" ref={menuRef}>
+            {/* Sync Badge */}
+            <div 
+              className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold border ${
+                syncStatus === 'synced'
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                  : syncStatus === 'syncing'
+                  ? 'bg-blue-50 text-blue-700 border-blue-200'
+                  : syncStatus === 'error'
+                  ? 'bg-red-50 text-red-700 border-red-200'
+                  : 'bg-slate-100 text-slate-600 border-slate-200'
+              }`}
+              title={
+                syncStatus === 'synced'
+                  ? 'Sincronizado con Cloud Firestore'
+                  : syncStatus === 'syncing'
+                  ? 'Sincronizando con Cloud Firestore...'
+                  : syncStatus === 'error'
+                  ? 'Error de sincronización con Firestore'
+                  : 'Modo local (Sin sincronización en la nube)'
+              }
+            >
+              {syncStatus === 'synced' && <Cloud className="w-3.5 h-3.5 text-emerald-600" />}
+              {syncStatus === 'syncing' && <RefreshCw className="w-3.5 h-3.5 text-blue-600 animate-spin" />}
+              {syncStatus === 'error' && <AlertCircle className="w-3.5 h-3.5 text-red-600" />}
+              {syncStatus === 'offline' && <CloudOff className="w-3.5 h-3.5 text-slate-500" />}
+              <span className="capitalize">{syncStatus === 'synced' ? 'Nube OK' : syncStatus === 'syncing' ? 'Sincronizando' : syncStatus === 'error' ? 'Error Nube' : 'Local'}</span>
+            </div>
+
             {/* Info Asesor */}
             <div className="text-right leading-tight max-w-[140px] sm:max-w-[200px]">
               <div className="text-xs font-bold text-slate-900 truncate">
@@ -105,7 +149,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               </div>
               <div className="text-[11px] text-red-600 font-semibold flex items-center justify-end gap-1 truncate">
                 <span className="w-1.5 h-1.5 rounded-full bg-red-600 shrink-0"></span>
-                <span className="truncate">{ADVISOR_INFO.cargo}</span>
+                <span className="truncate">{user ? (user.email?.split('@')[0] || ADVISOR_INFO.cargo) : ADVISOR_INFO.cargo}</span>
               </div>
             </div>
 
@@ -289,6 +333,54 @@ export const Navbar: React.FC<NavbarProps> = ({
                       Respaldo
                     </span>
                   </button>
+                </div>
+
+                {/* Sección Sesión y Sincronización */}
+                <div className="p-2.5 bg-slate-50 border-t border-slate-100 space-y-2">
+                  <div className="flex items-center justify-between px-1">
+                    <span className="text-[10px] uppercase font-bold text-slate-400">
+                      Sincronización Nube
+                    </span>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                      syncStatus === 'synced' ? 'bg-emerald-100 text-emerald-800' :
+                      syncStatus === 'syncing' ? 'bg-blue-100 text-blue-800' :
+                      syncStatus === 'error' ? 'bg-red-100 text-red-800' :
+                      'bg-slate-200 text-slate-700'
+                    }`}>
+                      {syncStatus === 'synced' ? 'Sincronizado' : syncStatus === 'syncing' ? 'Sincronizando...' : syncStatus === 'error' ? 'Error' : 'Modo Local'}
+                    </span>
+                  </div>
+
+                  {user ? (
+                    <div className="flex items-center justify-between pt-1">
+                      <span className="text-xs text-slate-600 truncate max-w-[170px]" title={user.email || ''}>
+                        {user.email}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMenuOpen(false);
+                          onLogoutClick?.();
+                        }}
+                        className="text-xs text-red-600 hover:text-red-800 font-semibold flex items-center gap-1 cursor-pointer"
+                      >
+                        <LogOut className="w-3.5 h-3.5" />
+                        <span>Salir</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        onLoginClick?.();
+                      }}
+                      className="w-full py-1.5 px-3 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <LogIn className="w-3.5 h-3.5" />
+                      <span>Iniciar Sesión Cloud</span>
+                    </button>
+                  )}
                 </div>
               </div>
             )}

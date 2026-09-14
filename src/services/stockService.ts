@@ -11,54 +11,178 @@ import {
   BANNED_VERSION_PREFIX_REGEX,
 } from './pdfService';
 import { normalizeMileage } from '../utils/formatters';
-import { getSituacionOperativaInfo } from '../utils/autonetHelpers';
+import { firestoreService, SyncStatus } from './firestoreService';
+import { authService } from './authService';
+import { isFirebaseConfigured } from './firebase';
+import { normalizePatenteDocId } from '../utils/firestoreSanitizer';
 
 const STOCK_STORAGE_KEY = 'autonet_stock_v2_real';
 const HISTORY_STORAGE_KEY = 'autonet_history_v2_real';
 
 type StockListener = (vehicles: Vehicle[]) => void;
+type HistoryListener = (history: UpdateHistoryRecord[]) => void;
+type SyncStatusListener = (status: SyncStatus) => void;
 
 class StockService {
   private listeners: StockListener[] = [];
+  private historyListeners: HistoryListener[] = [];
+  private syncStatusListeners: SyncStatusListener[] = [];
   private memoryStock: Vehicle[] | null = null;
+  private memoryHistory: UpdateHistoryRecord[] | null = null;
+  
+  // Sincronización cloud activa
+  private currentUserId: string | null = null;
+  private isCloudActive: boolean = false;
+  private syncStatus: SyncStatus = 'offline';
+  private unsubs: (() => void)[] = [];
 
   constructor() {
     this.ensureInitialized();
+    this.setupAuthSync();
+  }
+
+  private setupAuthSync(): void {
+    authService.subscribe((user, isInitializing) => {
+      if (isInitializing) return;
+
+      if (user) {
+        this.currentUserId = user.uid;
+        this.initCloudSync(user.uid);
+      } else {
+        this.currentUserId = null;
+        this.stopCloudSync();
+      }
+    });
+  }
+
+  private setSyncStatus(status: SyncStatus): void {
+    this.syncStatus = status;
+    this.syncStatusListeners.forEach((l) => l(status));
+  }
+
+  public getSyncStatus(): SyncStatus {
+    return this.syncStatus;
+  }
+
+  public subscribeSyncStatus(listener: SyncStatusListener): () => void {
+    this.syncStatusListeners.push(listener);
+    listener(this.syncStatus);
+    return () => {
+      this.syncStatusListeners = this.syncStatusListeners.filter((l) => l !== listener);
+    };
+  }
+
+  public isUsingCloud(): boolean {
+    return this.isCloudActive;
+  }
+
+  /**
+   * Conecta los listeners en tiempo real con Cloud Firestore para el usuario autenticado.
+   */
+  public initCloudSync(userId: string): void {
+    this.stopCloudSync();
+    this.currentUserId = userId;
+
+    if (!isFirebaseConfigured) {
+      this.setSyncStatus('offline');
+      return;
+    }
+
+    this.setSyncStatus('syncing');
+
+    // Listener en tiempo real de vehículos
+    const unsubVehicles = firestoreService.subscribeToVehicles(
+      userId,
+      (cloudVehicles) => {
+        // Solo si Firestore tiene datos para este usuario activamos Firestore como Fuente Principal de Verdad
+        if (cloudVehicles.length > 0) {
+          this.isCloudActive = true;
+          this.memoryStock = cloudVehicles;
+          this.setSyncStatus('synced');
+          this.notify();
+        } else {
+          // Si Firestore está vacío, el usuario puede estar en la PC antes de migrar
+          this.setSyncStatus('synced');
+        }
+      },
+      (error) => {
+        console.error('[StockService] Error en snapshot de vehículos Firestore:', error);
+        this.setSyncStatus(navigator.onLine ? 'error' : 'offline');
+      }
+    );
+
+    // Listener en tiempo real de historial
+    const unsubHistory = firestoreService.subscribeToHistory(
+      userId,
+      (cloudHistory) => {
+        if (cloudHistory.length > 0) {
+          this.memoryHistory = cloudHistory;
+          this.notifyHistory();
+        }
+      },
+      (error) => {
+        console.error('[StockService] Error en snapshot de historial Firestore:', error);
+      }
+    );
+
+    this.unsubs.push(unsubVehicles, unsubHistory);
+
+    // Detección de conectividad del navegador
+    if (typeof window !== 'undefined') {
+      const handleOnline = () => this.setSyncStatus('synced');
+      const handleOffline = () => this.setSyncStatus('offline');
+      window.addEventListener('online', handleOnline);
+      window.addEventListener('offline', handleOffline);
+      this.unsubs.push(() => {
+        window.removeEventListener('online', handleOnline);
+        window.removeEventListener('offline', handleOffline);
+      });
+    }
+  }
+
+  public stopCloudSync(): void {
+    this.unsubs.forEach((unsub) => {
+      try {
+        unsub();
+      } catch (e) {
+        // ignore
+      }
+    });
+    this.unsubs = [];
+    this.isCloudActive = false;
+    this.setSyncStatus('offline');
   }
 
   private ensureInitialized(): void {
     if (typeof window === 'undefined') return;
-    
-    // Limpiar claves antiguas de versiones de prueba con datos ficticios
+
     try {
       localStorage.removeItem('autonet_stock_v1');
       localStorage.removeItem('autonet_history_v1');
-    } catch (e) {
+    } catch {
       // ignore
     }
 
     const existing = localStorage.getItem(STOCK_STORAGE_KEY);
     if (!existing) {
-      this.saveStock(INITIAL_STOCK);
+      this.saveLocalStockOnly(INITIAL_STOCK);
       return;
     }
 
     try {
       const parsed = JSON.parse(existing) as Vehicle[];
-      // Si por alguna razón tiene los 12 datos de ejemplo viejos o menos de 50 items
-      const hasOldMock = parsed.some(v => v.id === 'AUT-101' && v.version.includes('1.4 TSI Highline AT'));
+      const hasOldMock = parsed.some((v) => v.id === 'AUT-101' && v.version.includes('1.4 TSI Highline AT'));
       if (hasOldMock || parsed.length < 50) {
-        this.saveStock(INITIAL_STOCK);
+        this.saveLocalStockOnly(INITIAL_STOCK);
         return;
       }
 
-      // Si las unidades en almacenamiento no tienen la sincronización web de Autonet aplicada
-      const lacksWebSync = !parsed.some(v => v.sincronizadoAutonetWeb);
+      const lacksWebSync = !parsed.some((v) => v.sincronizadoAutonetWeb);
       if (lacksWebSync) {
         const initialMap = new Map<string, Vehicle>();
-        INITIAL_STOCK.forEach(v => initialMap.set(v.id, v));
+        INITIAL_STOCK.forEach((v) => initialMap.set(v.id, v));
 
-        const merged = parsed.map(p => {
+        const merged = parsed.map((p) => {
           const fresh = initialMap.get(p.id);
           if (!fresh) return p;
           return {
@@ -73,95 +197,10 @@ class StockService {
             autonetWebId: fresh.autonetWebId || p.autonetWebId,
           };
         });
-        this.saveStock(merged);
-      }
-
-      // Saneamiento y corrección de datos existentes:
-      // 1. Purgar registros corruptos artificiales creados por importaciones anteriores (ej: patente "PEUGEOT", marca "Autonet", modelo "Modelo")
-      // 2. Normalizar kilometraje a número entero en todos los registros
-      // 3. Corregir registros que hayan quedado con prefijos desplazados
-      const currentList = this.getAllVehicles();
-      let hasSanitizationFix = false;
-
-      // Filtrar y eliminar registros corruptos
-      const filteredList = currentList.filter((v) => {
-        const check = isCorruptStoredVehicle(v);
-        if (check.isCorrupt) {
-          console.warn(`[STOCK-PURGE] Eliminando registro corrupto previo: ID=${v.id}, Patente=${v.patente}, Marca=${v.marca}, Modelo=${v.modelo}. Razón: ${check.reason}`);
-          hasSanitizationFix = true;
-          return false;
-        }
-        return true;
-      });
-
-      const sanitized = filteredList.map((v) => {
-        let modified = false;
-        const normKm = normalizeMileage(v.kilometraje) ?? 0;
-        let km = v.kilometraje;
-        if (v.kilometraje !== normKm) {
-          km = normKm;
-          modified = true;
-        }
-
-        let marca = v.marca;
-        let modelo = v.modelo;
-        let version = v.version;
-
-        // Limpiar version si contiene prefijos internos (T, C, A, TS, PA, AK, P - C, 0 KM, FLOTA, etc.)
-        const cleanedVer = cleanVersion(version);
-        if (cleanedVer !== version) {
-          version = cleanedVer;
-          modified = true;
-        }
-
-        // Si la marca era Autonet, modelo 'P', o la descripción tenía prefijos internos desplazados, re-parsear
-        if (
-          marca.toLowerCase() === 'autonet' ||
-          modelo === 'P' ||
-          modelo.startsWith('-') ||
-          version.startsWith('-') ||
-          BANNED_VERSION_PREFIX_REGEX.test(v.version)
-        ) {
-          const combined = `${marca.toLowerCase() === 'autonet' ? '' : marca} ${modelo} ${version}`.trim();
-          const parsed = parseVehicleDescription(combined);
-          if (parsed.marca !== 'DESCONOCIDA') {
-            marca = parsed.marca;
-            modelo = parsed.modelo;
-            version = parsed.version;
-            modified = true;
-          }
-        }
-
-        // 4. Migración de ventas anteriores (Requerimiento 18):
-        // Unidades ya vendidas sin propietario asignado pasan a 'Venta sin clasificar' (saleOwner = null)
-        if (v.estado === 'Vendido' && v.saleOwner === undefined) {
-          modified = true;
-          return {
-            ...v,
-            saleOwner: null,
-            soldAt: v.soldAt || v.fechaActualizacion || new Date().toISOString().split('T')[0],
-            soldPrice: v.soldPrice ?? v.precio,
-          };
-        }
-
-        if (modified) {
-          hasSanitizationFix = true;
-          return {
-            ...v,
-            kilometraje: km,
-            marca,
-            modelo,
-            version,
-          };
-        }
-        return v;
-      });
-
-      if (hasSanitizationFix) {
-        this.saveStock(sanitized);
+        this.saveLocalStockOnly(merged);
       }
     } catch {
-      this.saveStock(INITIAL_STOCK);
+      this.saveLocalStockOnly(INITIAL_STOCK);
     }
   }
 
@@ -172,12 +211,28 @@ class StockService {
     };
   }
 
+  public subscribeHistory(listener: HistoryListener): () => void {
+    this.historyListeners.push(listener);
+    return () => {
+      this.historyListeners = this.historyListeners.filter((l) => l !== listener);
+    };
+  }
+
   private notify(): void {
     const data = this.getAllVehicles();
     this.listeners.forEach((listener) => listener(data));
   }
 
-  private saveStock(vehicles: Vehicle[]): void {
+  private notifyHistory(): void {
+    const data = this.getUpdateHistory();
+    this.historyListeners.forEach((listener) => listener(data));
+  }
+
+  /**
+   * Guarda únicamente en localStorage (utilizado para estado local previo a la migración).
+   * NO borra ni altera keys no correspondientes.
+   */
+  private saveLocalStockOnly(vehicles: Vehicle[]): void {
     this.memoryStock = vehicles;
     if (typeof window !== 'undefined') {
       try {
@@ -189,14 +244,39 @@ class StockService {
     this.notify();
   }
 
+  /**
+   * Guarda un vehículo individual de forma persistente.
+   * Si cloud está activo, escribe directamente en Firestore.
+   * Si cloud no está activo, actualiza localStorage.
+   */
+  private async persistVehicle(updatedVehicle: Vehicle): Promise<void> {
+    if (this.isCloudActive && this.currentUserId) {
+      await firestoreService.saveVehicle(this.currentUserId, updatedVehicle);
+      // El onSnapshot actualizará la memoria y notificará
+    } else {
+      const stock = this.getAllVehicles();
+      const index = stock.findIndex((v) => v.id === updatedVehicle.id || v.patente === updatedVehicle.patente);
+      if (index !== -1) {
+        stock[index] = updatedVehicle;
+      } else {
+        stock.push(updatedVehicle);
+      }
+      this.saveLocalStockOnly(stock);
+    }
+  }
+
   public getAllVehicles(): Vehicle[] {
+    if (this.isCloudActive && this.memoryStock) {
+      return this.memoryStock;
+    }
+
     if (typeof window === 'undefined') {
       return this.memoryStock || INITIAL_STOCK;
     }
     try {
       const data = localStorage.getItem(STOCK_STORAGE_KEY);
       if (!data) {
-        this.saveStock(INITIAL_STOCK);
+        this.saveLocalStockOnly(INITIAL_STOCK);
         return INITIAL_STOCK;
       }
       const parsed = JSON.parse(data) as Vehicle[];
@@ -213,16 +293,14 @@ class StockService {
   }
 
   public getVehicleByPatente(patente: string): Vehicle | undefined {
-    const cleanPatente = patente.replace(/\s+/g, '').toUpperCase();
+    const cleanPatente = normalizePlate(patente);
     return this.getAllVehicles().find(
-      (v) => v.patente.replace(/\s+/g, '').toUpperCase() === cleanPatente
+      (v) => normalizePlate(v.patente) === cleanPatente
     );
   }
 
   /**
    * Cambia el estado de un vehículo.
-   * Si es marcado manualmente como 'Vendido', se activa la bandera `estadoModificadoManualmente`
-   * para protegerlo de ser reactivado a 'Disponible' por futuros PDFs sin intervención del usuario.
    */
   public updateVehicleStatus(id: string, nuevoEstado: VehicleStatus, esManual: boolean = true): Vehicle | null {
     const stock = this.getAllVehicles();
@@ -235,21 +313,30 @@ class StockService {
       ...current,
       estado: nuevoEstado,
       estadoModificadoManualmente: esManual ? (nuevoEstado === 'Vendido') : current.estadoModificadoManualmente,
-      // Si se pasa a Vendido sin clasificar por este método rápido, asignar venta sin clasificar (null)
       saleOwner: nuevoEstado === 'Vendido' ? (current.saleOwner ?? null) : current.saleOwner,
       soldAt: nuevoEstado === 'Vendido' ? (current.soldAt || today) : current.soldAt,
       soldPrice: nuevoEstado === 'Vendido' ? (current.soldPrice ?? current.precio) : current.soldPrice,
       fechaActualizacion: new Date().toISOString(),
     };
 
-    stock[index] = updated;
-    this.saveStock(stock);
+    if (this.isCloudActive && this.currentUserId) {
+      firestoreService.saveVehicle(this.currentUserId, updated).catch((err) => {
+        console.error('Error al guardar cambio de estado en Firestore:', err);
+      });
+      // Optimistic update
+      stock[index] = updated;
+      this.memoryStock = stock;
+      this.notify();
+    } else {
+      stock[index] = updated;
+      this.saveLocalStockOnly(stock);
+    }
+
     return updated;
   }
 
   /**
    * Registra una unidad como vendida indicando si fue venta propia o de otro vendedor.
-   * Guarda fecha de venta, precio de cierre y nota opcional.
    */
   public markVehicleAsSold(
     id: string,
@@ -279,13 +366,23 @@ class StockService {
       fechaActualizacion: new Date().toISOString(),
     };
 
-    stock[index] = updated;
-    this.saveStock(stock);
+    if (this.isCloudActive && this.currentUserId) {
+      firestoreService.saveVehicle(this.currentUserId, updated).catch((err) => {
+        console.error('Error al marcar vehículo vendido en Firestore:', err);
+      });
+      stock[index] = updated;
+      this.memoryStock = stock;
+      this.notify();
+    } else {
+      stock[index] = updated;
+      this.saveLocalStockOnly(stock);
+    }
+
     return updated;
   }
 
   /**
-   * Modifica los datos de una venta existente (propietario, fecha, precio).
+   * Modifica los datos de una venta existente.
    */
   public updateSaleInfo(
     id: string,
@@ -308,8 +405,18 @@ class StockService {
       fechaActualizacion: new Date().toISOString(),
     };
 
-    stock[index] = updated;
-    this.saveStock(stock);
+    if (this.isCloudActive && this.currentUserId) {
+      firestoreService.saveVehicle(this.currentUserId, updated).catch((err) => {
+        console.error('Error al actualizar venta en Firestore:', err);
+      });
+      stock[index] = updated;
+      this.memoryStock = stock;
+      this.notify();
+    } else {
+      stock[index] = updated;
+      this.saveLocalStockOnly(stock);
+    }
+
     return updated;
   }
 
@@ -332,37 +439,35 @@ class StockService {
       fechaActualizacion: new Date().toISOString(),
     };
 
-    stock[index] = updated;
-    this.saveStock(stock);
+    if (this.isCloudActive && this.currentUserId) {
+      firestoreService.saveVehicle(this.currentUserId, updated).catch((err) => {
+        console.error('Error al revertir vehículo a disponible en Firestore:', err);
+      });
+      stock[index] = updated;
+      this.memoryStock = stock;
+      this.notify();
+    } else {
+      stock[index] = updated;
+      this.saveLocalStockOnly(stock);
+    }
+
     return updated;
   }
 
-  /**
-   * Retorna únicamente los vehículos del stock activo (no históricos y estado Disponible o Reservado).
-   */
   public getActiveStock(): Vehicle[] {
     return this.getAllVehicles().filter(
       (v) => !v.isHistorical && (v.estado === 'Disponible' || v.estado === 'Reservado')
     );
   }
 
-  /**
-   * Retorna las ventas propias del asesor (saleOwner === 'self').
-   */
   public getMySales(): Vehicle[] {
     return this.getAllVehicles().filter((v) => v.estado === 'Vendido' && v.saleOwner === 'self');
   }
 
-  /**
-   * Retorna todas las ventas registradas.
-   */
   public getAllSales(): Vehicle[] {
     return this.getAllVehicles().filter((v) => v.estado === 'Vendido');
   }
 
-  /**
-   * Retorna los vehículos que ya no están en stock activo (histórico).
-   */
   public getOutOfStockVehicles(): Vehicle[] {
     return this.getAllVehicles().filter((v) => v.isHistorical || v.estado === 'fuera_de_stock');
   }
@@ -379,18 +484,32 @@ class StockService {
       fechaActualizacion: new Date().toISOString(),
     };
 
-    stock[index] = updated;
-    this.saveStock(stock);
+    if (this.isCloudActive && this.currentUserId) {
+      firestoreService.saveVehicle(this.currentUserId, updated).catch((err) => {
+        console.error('Error al actualizar vehículo en Firestore:', err);
+      });
+      stock[index] = updated;
+      this.memoryStock = stock;
+      this.notify();
+    } else {
+      stock[index] = updated;
+      this.saveLocalStockOnly(stock);
+    }
+
     return updated;
   }
 
-  /**
-   * Sincroniza el stock actual con el catálogo y fotografías oficiales de la web de Autonet.
-   */
   public async syncWithAutonetWeb(): Promise<AutonetSyncResult> {
     const current = this.getAllVehicles();
     const { updatedStock, result } = await autonetService.syncStockWithAutonetWeb(current);
-    this.saveStock(updatedStock);
+
+    if (this.isCloudActive && this.currentUserId) {
+      await firestoreService.batchSaveVehicles(this.currentUserId, updatedStock);
+      this.memoryStock = updatedStock;
+      this.notify();
+    } else {
+      this.saveLocalStockOnly(updatedStock);
+    }
     return result;
   }
 
@@ -404,11 +523,9 @@ class StockService {
     const currentStock = this.getAllVehicles();
     const updatedMap = new Map<string, Vehicle>();
 
-    // Cargar mapa con patentes normalizadas, descartando cualquier registro corrupto previo
     currentStock.forEach((v) => {
       const corruptCheck = isCorruptStoredVehicle(v);
       if (corruptCheck.isCorrupt) {
-        console.warn(`[BATCH-UPDATE] Descartando vehículo corrupto previo del stock: ID=${v.id}, Patente=${v.patente}`);
         return;
       }
       const key = normalizePlate(v.patente);
@@ -422,11 +539,10 @@ class StockService {
     diff.items.forEach((item) => {
       const key = normalizePlate(item.patente);
       if (!key || !isValidPlate(key)) {
-        return; // Omitir cualquier ítem sin patente válida
+        return;
       }
 
       if (item.tipo === 'nuevo' && item.vehiculoNuevo) {
-        // Nuevo ingreso detectado en el PDF (pasa a Stock Activo como Disponible)
         const newVehicle: Vehicle = {
           id: item.vehiculoNuevo.id || `AUT-${Math.floor(100 + Math.random() * 900)}`,
           marca: item.vehiculoNuevo.marca || 'Sin Marca',
@@ -448,65 +564,35 @@ class StockService {
           urlAutonetOriginal: item.vehiculoNuevo.urlAutonetOriginal,
           ubicacion: item.vehiculoNuevo.ubicacion || 'Neuquén',
           empresa: item.vehiculoNuevo.empresa || 'Autonet',
-          sincronizadoAutonetWeb: item.vehiculoNuevo.sincronizadoAutonetWeb || false,
-          precioPublicadoWeb: item.vehiculoNuevo.precioPublicadoWeb,
+          fechaToma: item.vehiculoNuevo.fechaToma,
+          categoriaOrigen: item.vehiculoNuevo.categoriaOrigen,
+          tipoVehiculo: item.vehiculoNuevo.tipoVehiculo,
+          ubCode: item.vehiculoNuevo.ubCode,
+          ubLabel: item.vehiculoNuevo.ubLabel,
           fechaIncorporacion: nowIso,
           fechaActualizacion: nowIso,
           origenDato: 'autonet_pdf',
-          provinciaRadicacion: item.vehiculoNuevo.provinciaRadicacion || 'Neuquén',
+          provinciaRadicacion: 'Neuquén',
           isHistorical: false,
         };
         updatedMap.set(key, newVehicle);
-      } else if ((item.tipo === 'modificado' || item.tipo === 'sin_cambio') && updatedMap.has(key)) {
+      } else if (item.tipo === 'modificado' && updatedMap.has(key)) {
         const existing = updatedMap.get(key)!;
-        
-        // REGLA CRÍTICA: Si el asesor marcó 'Vendido' manualmente, preservar estado y datos de venta
-        let nextEstado = existing.estado;
-        if (existing.estado === 'Vendido' && existing.estadoModificadoManualmente) {
-          nextEstado = 'Vendido';
-        } else if (existing.estado === 'fuera_de_stock') {
-          // Si estaba fuera de stock pero reapareció en el PDF nuevo, reactivar a Disponible
-          nextEstado = 'Disponible';
-        }
-
-        // Actualizar todos los datos fuente extraídos del PDF nuevo
-        const sourceUpdates: Partial<Vehicle> = {};
-        if (item.vehiculoNuevo) {
-          if (item.vehiculoNuevo.marca) sourceUpdates.marca = item.vehiculoNuevo.marca;
-          if (item.vehiculoNuevo.modelo) sourceUpdates.modelo = item.vehiculoNuevo.modelo;
-          if (item.vehiculoNuevo.version) sourceUpdates.version = cleanVersion(item.vehiculoNuevo.version);
-          if (item.vehiculoNuevo.anio) sourceUpdates.anio = item.vehiculoNuevo.anio;
-          if (item.vehiculoNuevo.color) sourceUpdates.color = item.vehiculoNuevo.color;
-          if (item.vehiculoNuevo.kilometraje !== undefined) {
-            sourceUpdates.kilometraje = normalizeMileage(item.vehiculoNuevo.kilometraje) ?? 0;
-          }
-          if (item.vehiculoNuevo.precio) sourceUpdates.precio = item.vehiculoNuevo.precio;
-          if (item.vehiculoNuevo.empresa) sourceUpdates.empresa = item.vehiculoNuevo.empresa;
-          if (item.vehiculoNuevo.ubCode) {
-            sourceUpdates.ubCode = item.vehiculoNuevo.ubCode;
-            sourceUpdates.ubicacion = item.vehiculoNuevo.ubCode;
-            sourceUpdates.ubLabel = item.vehiculoNuevo.ubLabel || getSituacionOperativaInfo(item.vehiculoNuevo.ubCode).shortLabel;
-          }
-          if (item.vehiculoNuevo.tipoVehiculo) sourceUpdates.tipoVehiculo = item.vehiculoNuevo.tipoVehiculo;
-          if (item.vehiculoNuevo.categoriaOrigen) sourceUpdates.categoriaOrigen = item.vehiculoNuevo.categoriaOrigen;
-          if (item.vehiculoNuevo.fechaToma) sourceUpdates.fechaToma = item.vehiculoNuevo.fechaToma;
-        }
-
         const newProps: Partial<Vehicle> = {
-          ...sourceUpdates,
           fechaActualizacion: nowIso,
-          estado: nextEstado,
-          isHistorical: false, // Presente en el último PDF
+          isHistorical: false,
         };
 
-        if (item.cambios) {
+        if (item.cambios && item.cambios.length > 0) {
           item.cambios.forEach((c) => {
-            if (c.campo === 'estado' && existing.estadoModificadoManualmente && existing.estado === 'Vendido') {
-              return; // Proteger estado vendido manual
-            }
-            if (c.campo === 'kilometraje') {
-              (newProps as any)[c.campo] = normalizeMileage(c.valorNuevo) ?? 0;
-            } else if (c.campo === 'precio') {
+            if (c.campo === 'precio') {
+              newProps.precio =
+                typeof c.valorNuevo === 'number'
+                  ? c.valorNuevo
+                  : Number(String(c.valorNuevo).replace(/[^0-9]/g, '')) || 0;
+            } else if (c.campo === 'kilometraje') {
+              newProps.kilometraje = normalizeMileage(c.valorNuevo) ?? 0;
+            } else if (c.campo === 'anio') {
               (newProps as any)[c.campo] =
                 typeof c.valorNuevo === 'number'
                   ? c.valorNuevo
@@ -523,11 +609,7 @@ class StockService {
         });
       } else if (item.tipo === 'no_aparece' && updatedMap.has(key)) {
         const existing = updatedMap.get(key)!;
-        
-        // REGLAS AUTOMÁTICAS: Unidad no presente en el nuevo PDF
-        // Sale del stock activo automáticamente hacia el histórico
         if (existing.estado === 'Vendido') {
-          // Caso A: Ya estaba vendida -> se mantiene como Vendido en el historial con datos de venta intactos
           updatedMap.set(key, {
             ...existing,
             isHistorical: true,
@@ -535,7 +617,6 @@ class StockService {
             fechaActualizacion: nowIso,
           });
         } else if (existing.estado === 'Reservado') {
-          // Caso B: Estaba reservada -> pasa a histórico conservando el estado Reservado
           updatedMap.set(key, {
             ...existing,
             isHistorical: true,
@@ -543,8 +624,6 @@ class StockService {
             fechaActualizacion: nowIso,
           });
         } else {
-          // Caso C: Estaba disponible -> pasa a 'fuera_de_stock' en el registro histórico
-          // NO marcar como vendida automáticamente ni como reservada
           updatedMap.set(key, {
             ...existing,
             estado: 'fuera_de_stock',
@@ -557,9 +636,7 @@ class StockService {
     });
 
     const finalStock = Array.from(updatedMap.values());
-    this.saveStock(finalStock);
 
-    // Registrar en el historial de actualizaciones
     const historyRecord: UpdateHistoryRecord = {
       id: `UPD-${Date.now()}`,
       fecha: nowIso,
@@ -574,16 +651,34 @@ class StockService {
       errores: [],
     };
 
-    this.saveHistoryRecord(historyRecord);
+    if (this.isCloudActive && this.currentUserId) {
+      firestoreService.batchSaveVehicles(this.currentUserId, finalStock).catch((err) => {
+        console.error('Error al guardar lote de stock en Firestore:', err);
+      });
+      firestoreService.addHistoryRecord(this.currentUserId, historyRecord).catch((err) => {
+        console.error('Error al registrar historial en Firestore:', err);
+      });
+      this.memoryStock = finalStock;
+      this.memoryHistory = [historyRecord, ...(this.memoryHistory || [])];
+      this.notify();
+      this.notifyHistory();
+    } else {
+      this.saveLocalStockOnly(finalStock);
+      this.saveHistoryRecord(historyRecord);
+    }
+
     return historyRecord;
   }
 
   public getUpdateHistory(): UpdateHistoryRecord[] {
+    if (this.isCloudActive && this.memoryHistory) {
+      return this.memoryHistory;
+    }
+
     if (typeof window === 'undefined') return [];
     try {
       const raw = localStorage.getItem(HISTORY_STORAGE_KEY);
       if (!raw) {
-        // Semilla con historial oficial de la carga de stock real
         const initialLog: UpdateHistoryRecord = {
           id: 'UPD-INIT-AUTONET-01',
           fecha: '2026-09-01T12:00:00.000Z',
@@ -611,7 +706,7 @@ class StockService {
     if (typeof window === 'undefined') return;
     try {
       const history = this.getUpdateHistory();
-      const nextHistory = [record, ...history].slice(0, 50); // Guardar últimas 50
+      const nextHistory = [record, ...history].slice(0, 50);
       localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(nextHistory));
     } catch (e) {
       console.error('Error saving history record:', e);
@@ -619,9 +714,15 @@ class StockService {
   }
 
   public resetToInitialStock(): void {
-    this.saveStock(INITIAL_STOCK);
-    localStorage.removeItem(HISTORY_STORAGE_KEY);
-    this.getUpdateHistory(); // recreate initial record
+    if (this.isCloudActive && this.currentUserId) {
+      firestoreService.batchSaveVehicles(this.currentUserId, INITIAL_STOCK).catch(console.error);
+      this.memoryStock = INITIAL_STOCK;
+      this.notify();
+    } else {
+      this.saveLocalStockOnly(INITIAL_STOCK);
+      localStorage.removeItem(HISTORY_STORAGE_KEY);
+      this.getUpdateHistory();
+    }
   }
 
   public exportStockJson(): string {
@@ -630,6 +731,7 @@ class StockService {
       history: this.getUpdateHistory(),
       exportedAt: new Date().toISOString(),
       version: '1.0.0',
+      source: this.isCloudActive ? 'firestore_cloud' : 'local_storage',
     };
     return JSON.stringify(data, null, 2);
   }
@@ -638,9 +740,18 @@ class StockService {
     try {
       const parsed = JSON.parse(jsonString);
       if (Array.isArray(parsed.stock)) {
-        this.saveStock(parsed.stock);
-        if (Array.isArray(parsed.history)) {
-          localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(parsed.history));
+        if (this.isCloudActive && this.currentUserId) {
+          firestoreService.batchSaveVehicles(this.currentUserId, parsed.stock).catch(console.error);
+          if (Array.isArray(parsed.history)) {
+            firestoreService.batchSaveHistory(this.currentUserId, parsed.history).catch(console.error);
+          }
+          this.memoryStock = parsed.stock;
+          this.notify();
+        } else {
+          this.saveLocalStockOnly(parsed.stock);
+          if (Array.isArray(parsed.history)) {
+            localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(parsed.history));
+          }
         }
         return true;
       }
