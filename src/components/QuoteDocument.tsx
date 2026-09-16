@@ -61,7 +61,7 @@ export const QuoteDocument: React.FC<QuoteDocumentProps> = ({
   return (
     <div 
       id="quote-document-a4" 
-      className="quote-document bg-white text-slate-900 font-sans w-[210mm] max-w-[210mm] min-h-[297mm] max-h-[297mm] mx-auto p-[14mm] box-border flex flex-col justify-between shadow-xs print:shadow-none"
+      className="quote-document bg-white text-slate-900 font-sans w-[210mm] max-w-[210mm] h-[297mm] min-h-[297mm] max-h-[297mm] mx-auto p-[14mm] box-border flex flex-col shadow-xs print:shadow-none"
       style={{ width: '210mm', minHeight: '297mm', maxHeight: '297mm' }}
     >
       {/* 1. ENCABEZADO AUTONET */}

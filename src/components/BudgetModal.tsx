@@ -59,7 +59,7 @@ export const BudgetModal: React.FC<BudgetModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-950/80 backdrop-blur-xs overflow-y-auto print:hidden">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[96vh] flex flex-col overflow-hidden border border-slate-200">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full max-h-[96vh] flex flex-col overflow-hidden border border-slate-200">
         
         {/* Barra superior de control */}
         <div className="px-5 py-3.5 bg-white text-slate-900 border-b border-slate-200 flex items-center justify-between shrink-0">
@@ -167,8 +167,8 @@ export const BudgetModal: React.FC<BudgetModalProps> = ({
         )}
 
         {/* VISTA PREVIA DEL DOCUMENTO A4 (Exactamente el mismo documento que se imprime) */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-200/80">
-          <div className="max-w-[210mm] mx-auto bg-white rounded-lg shadow-md overflow-hidden border border-slate-300">
+        <div className="flex-1 overflow-auto p-4 sm:p-6 bg-slate-200/80">
+          <div className="w-fit mx-auto bg-white rounded-lg shadow-md border border-slate-300">
             <QuoteDocument
               vehicle={budget.vehiculo}
               vehiclePrice={budget.precioVehiculo}
