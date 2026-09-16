@@ -119,13 +119,13 @@
 
   /* Ocultar ABSOLUTAMENTE TODO el árbol interactivo de la app */
   #app-interactive-root,
+  #app-interactive-root nav,
+  #app-interactive-root header,
+  #app-interactive-root footer,
+  #app-interactive-root aside,
+  #app-interactive-root button,
+  #app-interactive-root dialog,
   .print-hide,
-  nav,
-  header,
-  footer,
-  aside,
-  button,
-  dialog,
   .print\:hidden {
     display: none !important;
   }
@@ -148,18 +148,36 @@
     overflow: hidden !important;
   }
 
+  .budget-a4-sheet,
   #quote-document-a4 {
-    display: flex !important;
-    flex-direction: column !important;
+    display: block !important;
+    position: relative !important;
     width: 210mm !important;
     height: 297mm !important;
     min-height: 297mm !important;
     max-height: 297mm !important;
-    padding: 14mm !important;
+    padding: 14mm 14mm 32mm 14mm !important;
     box-sizing: border-box !important;
     margin: 0 !important;
     box-shadow: none !important;
     border: none !important;
+    overflow: hidden !important;
+  }
+
+  .budget-header {
+    display: flex !important;
+    visibility: visible !important;
+  }
+
+  .budget-footer {
+    position: absolute !important;
+    left: 14mm !important;
+    right: 14mm !important;
+    bottom: 12mm !important;
+    margin-top: 0 !important;
+    display: block !important;
+    visibility: visible !important;
+    box-sizing: border-box !important;
   }
 }
 

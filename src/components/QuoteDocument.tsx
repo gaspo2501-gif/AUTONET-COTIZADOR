@@ -61,11 +61,11 @@ export const QuoteDocument: React.FC<QuoteDocumentProps> = ({
   return (
     <div 
       id="quote-document-a4" 
-      className="quote-document bg-white text-slate-900 font-sans w-[210mm] max-w-[210mm] h-[297mm] min-h-[297mm] max-h-[297mm] mx-auto p-[14mm] box-border flex flex-col shadow-xs print:shadow-none"
+      className="budget-a4-sheet quote-document bg-white text-slate-900 font-sans w-[210mm] max-w-[210mm] h-[297mm] min-h-[297mm] max-h-[297mm] mx-auto p-[14mm] pb-[32mm] box-border relative flex flex-col shadow-xs print:shadow-none"
       style={{ width: '210mm', minHeight: '297mm', maxHeight: '297mm' }}
     >
       {/* 1. ENCABEZADO AUTONET */}
-      <header className="border-b-2 border-slate-900 pb-4 mb-6 flex items-start justify-between">
+      <header className="budget-header border-b-2 border-slate-900 pb-4 mb-6 flex items-start justify-between">
         <div>
           <div className="flex items-center gap-2">
             <span className="text-3xl font-black tracking-tighter text-slate-950 font-sans">
@@ -205,7 +205,7 @@ export const QuoteDocument: React.FC<QuoteDocumentProps> = ({
       </section>
 
       {/* 6. FIRMA DEL ASESOR COMERCIAL */}
-      <footer className="border-t-2 border-slate-900 pt-3.5 mt-auto">
+      <footer className="budget-footer border-t-2 border-slate-900 pt-3.5 absolute left-[14mm] right-[14mm] bottom-[12mm]">
         <div className="flex items-end justify-between">
           <div>
             <div className="font-bold text-sm text-slate-900">
