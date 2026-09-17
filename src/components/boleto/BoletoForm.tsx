@@ -31,13 +31,23 @@ export const BoletoForm: React.FC<BoletoFormProps> = ({
 }) => {
   // Manejo de cambios en cliente
   const handleClientChange = (field: keyof BoletoData['cliente'], value: string) => {
-    onChange((prev) => ({
-      ...prev,
-      cliente: {
+    onChange((prev) => {
+      const updatedCliente = {
         ...prev.cliente,
         [field]: value,
-      },
-    }));
+      };
+
+      // Si cambia el estado civil y deja de ser CASADO/A, limpiar inmediatamente los datos del cónyuge
+      if (field === 'estadoCivil' && value !== 'CASADO/A') {
+        updatedCliente.conyugeNombre = '';
+        updatedCliente.conyugeDni = '';
+      }
+
+      return {
+        ...prev,
+        cliente: updatedCliente,
+      };
+    });
   };
 
   // Manejo de cambios en operación
@@ -386,14 +396,50 @@ export const BoletoForm: React.FC<BoletoFormProps> = ({
             <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
               Estado Civil (EstCivil)
             </label>
-            <input
-              type="text"
+            <select
               value={data.cliente.estadoCivil || ''}
               onChange={(e) => handleClientChange('estadoCivil', e.target.value)}
-              placeholder="Soltero/a, Casado/a"
-              className="w-full px-3 py-2 rounded-lg border border-slate-300"
-            />
+              className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white"
+            >
+              <option value="">SELECCIONAR...</option>
+              <option value="SOLTERO/A">SOLTERO/A</option>
+              <option value="CASADO/A">CASADO/A</option>
+              <option value="DIVORCIADO/A">DIVORCIADO/A</option>
+              <option value="VIUDO/A">VIUDO/A</option>
+              <option value="UNIÓN CONVIVENCIAL">UNIÓN CONVIVENCIAL</option>
+            </select>
           </div>
+
+          {/* Datos del Cónyuge: Visibles EXCLUSIVAMENTE si Estado Civil es CASADO/A */}
+          {data.cliente.estadoCivil === 'CASADO/A' && (
+            <>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
+                  Nombre y Apellido del Cónyuge (Conyuge)
+                </label>
+                <input
+                  type="text"
+                  value={data.cliente.conyugeNombre || ''}
+                  onChange={(e) => handleClientChange('conyugeNombre', e.target.value)}
+                  placeholder="Ej. MARÍA PÉREZ"
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
+                  DNI del Cónyuge (Doc. Ident.)
+                </label>
+                <input
+                  type="text"
+                  value={data.cliente.conyugeDni || ''}
+                  onChange={(e) => handleClientChange('conyugeDni', e.target.value)}
+                  placeholder="Ej. 32.456.789"
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 font-mono"
+                />
+              </div>
+            </>
+          )}
 
           <div>
             <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">

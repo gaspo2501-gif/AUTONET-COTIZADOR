@@ -37,6 +37,8 @@ export interface BoletoCliente {
   provincia?: string;
   codigoPostal?: string;
   estadoCivil?: string;
+  conyugeNombre?: string;
+  conyugeDni?: string;
   condicionIVA?: string;
   cuitCuil?: string;
   email?: string;
@@ -120,6 +122,8 @@ export interface BoletoFieldMapping {
   clienteNacimientoMes?: string;
   clienteNacimientoAnio?: string;
   clienteEstadoCivil?: string;
+  clienteConyugeNombre?: string;
+  clienteConyugeDni?: string;
   clienteActividad?: string;
   clienteCondicionIva?: string;
   clienteDireccion?: string;

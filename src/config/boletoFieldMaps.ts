@@ -14,6 +14,8 @@ export const COMMON_BOLETO_FIELDS: BoletoFieldMapping = {
   clienteNacimientoMes: 'Text5',
   clienteNacimientoAnio: 'Text6',
   clienteEstadoCivil: 'EstCivil',
+  clienteConyugeNombre: 'Conyuge',
+  clienteConyugeDni: 'Doc Ident',
   clienteActividad: 'Actividad o profesión',
   clienteCondicionIva: 'Condición ante el IVA',
   clienteDireccion: 'Dirección',

@@ -491,6 +491,16 @@ export class BoletoPdfService {
     drawTextInField(map.clienteCuit, data.cliente.cuitCuil ? String(data.cliente.cuitCuil).trim() : '');
     drawTextInField(map.clienteActividad, toBoletoText(data.cliente.actividad));
     drawTextInField(map.clienteEstadoCivil, toBoletoText(data.cliente.estadoCivil));
+
+    // Datos del cónyuge: Se completan EXCLUSIVAMENTE si Estado Civil es CASADO/A
+    const isCasado = toBoletoText(data.cliente.estadoCivil) === 'CASADO/A';
+    if (isCasado && data.cliente.conyugeNombre) {
+      drawTextInField(map.clienteConyugeNombre, toBoletoText(data.cliente.conyugeNombre));
+    }
+    if (isCasado && data.cliente.conyugeDni) {
+      drawTextInField(map.clienteConyugeDni, String(data.cliente.conyugeDni).trim());
+    }
+
     drawTextInField(map.clienteCondicionIva, toBoletoText(data.cliente.condicionIVA));
     drawTextInField(map.clienteDireccion, toBoletoText(data.cliente.direccion));
     drawTextInField(map.clienteLocalidad, toBoletoText(data.cliente.localidad));
@@ -695,6 +705,19 @@ export class BoletoPdfService {
     this.setTextIfExists(form, map.clienteCuit, data.cliente.cuitCuil ? String(data.cliente.cuitCuil).trim() : '');
     this.setTextIfExists(form, map.clienteActividad, toBoletoText(data.cliente.actividad));
     this.setTextIfExists(form, map.clienteEstadoCivil, toBoletoText(data.cliente.estadoCivil));
+
+    const isCasadoEditable = toBoletoText(data.cliente.estadoCivil) === 'CASADO/A';
+    if (isCasadoEditable && data.cliente.conyugeNombre) {
+      this.setTextIfExists(form, map.clienteConyugeNombre, toBoletoText(data.cliente.conyugeNombre), 28);
+    } else {
+      this.clearFieldIfExists(form, map.clienteConyugeNombre);
+    }
+    if (isCasadoEditable && data.cliente.conyugeDni) {
+      this.setTextIfExists(form, map.clienteConyugeDni, String(data.cliente.conyugeDni).trim());
+    } else {
+      this.clearFieldIfExists(form, map.clienteConyugeDni);
+    }
+
     this.setTextIfExists(form, map.clienteCondicionIva, toBoletoText(data.cliente.condicionIVA));
     this.setTextIfExists(form, map.clienteDireccion, toBoletoText(data.cliente.direccion), 32);
     this.setTextIfExists(form, map.clienteLocalidad, toBoletoText(data.cliente.localidad));
@@ -853,6 +876,8 @@ export class BoletoPdfService {
     addCheck(map.clienteNacimientoMes, 'Nacimiento Mes', data.cliente.nacimientoMes || '');
     addCheck(map.clienteNacimientoAnio, 'Nacimiento Año', data.cliente.nacimientoAnio || '');
     addCheck(map.clienteEstadoCivil, 'Estado Civil', data.cliente.estadoCivil || '');
+    addCheck(map.clienteConyugeNombre, 'Cónyuge (Nombre y Apellido)', toBoletoText(data.cliente.estadoCivil) === 'CASADO/A' ? (data.cliente.conyugeNombre || '') : '');
+    addCheck(map.clienteConyugeDni, 'Cónyuge Doc. Ident. (DNI)', toBoletoText(data.cliente.estadoCivil) === 'CASADO/A' ? (data.cliente.conyugeDni || '') : '');
     addCheck(map.clienteActividad, 'Actividad o Profesión', data.cliente.actividad || '');
     addCheck(map.clienteCondicionIva, 'Condición IVA', data.cliente.condicionIVA || '');
     addCheck(map.clienteDireccion, 'Dirección', data.cliente.direccion || '');

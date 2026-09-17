@@ -106,6 +106,8 @@ export const BoletoModal: React.FC<BoletoModalProps> = ({
         nacimientoMes: '',
         nacimientoAnio: '',
         estadoCivil: '',
+        conyugeNombre: '',
+        conyugeDni: '',
         actividad: '',
         condicionIVA: 'Consumidor Final',
         direccion: '',
