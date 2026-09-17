@@ -23,10 +23,10 @@ import { VehicleQuoteModal } from './VehicleQuoteModal';
 interface VehicleDetailModalProps {
   vehicle: Vehicle | null;
   onClose: () => void;
-  onStatusChange: (id: string, newStatus: VehicleStatus) => void;
+  onStatusChange: (vehicleOrPatent: Vehicle | string, newStatus: VehicleStatus) => void;
   onOpenQuote?: (vehicle: Vehicle) => void;
   onOpenMarkAsSold?: (vehicle: Vehicle) => void;
-  onUpdateVehicleTableValue?: (vehicleId: string, tableValue: number, province: ProvinceTransfer) => void;
+  onUpdateVehicleTableValue?: (vehicleIdOrPatent: string, tableValue: number, province: ProvinceTransfer) => void;
 }
 
 export const VehicleDetailModal: React.FC<VehicleDetailModalProps> = ({
@@ -336,7 +336,7 @@ export const VehicleDetailModal: React.FC<VehicleDetailModalProps> = ({
                 <button
                   type="button"
                   id="modal-btn-marcar-disponible"
-                  onClick={() => onStatusChange(vehicle.id, 'Disponible')}
+                  onClick={() => onStatusChange(vehicle, 'Disponible')}
                   className="px-3 py-2 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-800 hover:bg-emerald-100 text-xs font-bold transition-colors"
                 >
                   MARCAR COMO DISPONIBLE
@@ -347,7 +347,7 @@ export const VehicleDetailModal: React.FC<VehicleDetailModalProps> = ({
                 <button
                   type="button"
                   id="modal-btn-marcar-reservado"
-                  onClick={() => onStatusChange(vehicle.id, 'Reservado')}
+                  onClick={() => onStatusChange(vehicle, 'Reservado')}
                   className="px-3 py-2 rounded-xl bg-amber-50 border border-amber-300 text-amber-800 hover:bg-amber-100 text-xs font-bold transition-colors"
                 >
                   MARCAR COMO RESERVADO
@@ -358,7 +358,7 @@ export const VehicleDetailModal: React.FC<VehicleDetailModalProps> = ({
                 <button
                   type="button"
                   id="modal-btn-marcar-vendido"
-                  onClick={() => onOpenMarkAsSold ? onOpenMarkAsSold(vehicle) : onStatusChange(vehicle.id, 'Vendido')}
+                  onClick={() => onOpenMarkAsSold ? onOpenMarkAsSold(vehicle) : onStatusChange(vehicle, 'Vendido')}
                   className="px-3 py-2 rounded-xl bg-rose-50 border border-rose-300 text-rose-800 hover:bg-rose-100 text-xs font-bold transition-colors"
                 >
                   MARCAR COMO VENDIDO

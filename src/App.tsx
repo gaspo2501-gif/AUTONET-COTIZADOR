@@ -11,6 +11,7 @@ import { Vehicle, StockFilters, VehicleStatus, ProvinceTransfer } from './types/
 import { stockService } from './services/stockService';
 import { CommercialBudget } from './services/quoteService';
 import { normalizeMileage } from './utils/formatters';
+import { normalizePatent, isSameVehicle } from './utils/vehicleIdentity';
 import { 
   calculateStockCounts, 
   applyStockFilters, 
@@ -108,15 +109,15 @@ export default function App() {
     const unsubscribe = stockService.subscribe((updatedList) => {
       setVehicles([...updatedList]);
       if (selectedVehicle) {
-        const found = updatedList.find((v) => v.id === selectedVehicle.id);
+        const found = updatedList.find((v) => isSameVehicle(v, selectedVehicle));
         if (found) setSelectedVehicle(found);
       }
       if (quoteVehicle) {
-        const foundQuote = updatedList.find((v) => v.id === quoteVehicle.id);
+        const foundQuote = updatedList.find((v) => isSameVehicle(v, quoteVehicle));
         if (foundQuote) setQuoteVehicle(foundQuote);
       }
       if (soldModalVehicle) {
-        const foundSold = updatedList.find((v) => v.id === soldModalVehicle.id);
+        const foundSold = updatedList.find((v) => isSameVehicle(v, soldModalVehicle));
         if (foundSold) setSoldModalVehicle(foundSold);
       }
     });
@@ -145,7 +146,8 @@ export default function App() {
     observaciones?: string;
   }) => {
     if (!soldModalVehicle) return;
-    const updated = stockService.markVehicleAsSold(soldModalVehicle.id, options);
+    const targetIdentifier = normalizePatent(soldModalVehicle.patente) || soldModalVehicle.id;
+    const updated = stockService.markVehicleAsSold(targetIdentifier, options);
     if (updated) {
       showToast(
         `Unidad ${updated.patente} (${updated.marca} ${updated.modelo}) registrada como vendida (${
@@ -156,19 +158,22 @@ export default function App() {
     }
   };
 
-  const handleRevertSale = (id: string) => {
-    const updated = stockService.revertVehicleToAvailable(id);
+  const handleRevertSale = (vehicleOrPatent: Vehicle | string) => {
+    const identifier = typeof vehicleOrPatent === 'string'
+      ? vehicleOrPatent
+      : (normalizePatent(vehicleOrPatent.patente) || vehicleOrPatent.id);
+    const updated = stockService.revertVehicleToAvailable(identifier);
     if (updated) {
       showToast(`Unidad ${updated.patente} reactivada como DISPONIBLE en stock.`, 'success');
     }
   };
 
   const handleUpdateVehicleTableValue = (
-    vehicleId: string,
+    vehicleIdOrPatent: string,
     tableValue: number,
     province: ProvinceTransfer
   ) => {
-    const updated = stockService.updateVehicle(vehicleId, {
+    const updated = stockService.updateVehicle(vehicleIdOrPatent, {
       valorTablaDnrpaEstimado: tableValue,
       provinciaRadicacion: province,
     });
@@ -181,27 +186,34 @@ export default function App() {
   };
 
   // Manejo de cambio de estado manual (Vendido / Disponible / Reservado)
-  const handleStatusChange = (id: string, newStatus: VehicleStatus) => {
-    const current = vehicles.find((v) => v.id === id);
+  const handleStatusChange = (vehicleOrIdentifier: Vehicle | string, newStatus: VehicleStatus) => {
+    let current: Vehicle | undefined;
+    if (typeof vehicleOrIdentifier === 'object') {
+      current = vehicleOrIdentifier;
+    } else {
+      const cleanPat = normalizePatent(vehicleOrIdentifier);
+      current = vehicles.find((v) =>
+        cleanPat ? normalizePatent(v.patente) === cleanPat : v.id === vehicleOrIdentifier
+      );
+    }
     if (!current) return;
 
     if (newStatus === 'Vendido') {
-      const target = vehicles.find((v) => v.id === id);
-      if (target) {
-        setSoldModalVehicle(target);
-        return;
-      }
+      setSoldModalVehicle(current);
+      return;
     }
 
+    const targetKey = normalizePatent(current.patente) || current.id;
+
     if (newStatus === 'Disponible') {
-      const updated = stockService.revertVehicleToAvailable(id);
+      const updated = stockService.revertVehicleToAvailable(targetKey);
       if (updated) {
         showToast(`Unidad ${updated.patente} marcada nuevamente como DISPONIBLE.`, 'success');
       }
       return;
     }
 
-    const updated = stockService.updateVehicleStatus(id, newStatus, true);
+    const updated = stockService.updateVehicleStatus(targetKey, newStatus, true);
     if (updated) {
       showToast(`Unidad ${updated.patente} marcada como RESERVADA.`, 'info');
     }
@@ -494,7 +506,7 @@ export default function App() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5">
                   {visibleVehicles.map((vehicle) => (
                     <VehicleCard
-                      key={vehicle.id}
+                      key={normalizePatent(vehicle.patente) || vehicle.id}
                       vehicle={vehicle}
                       onSelect={setSelectedVehicle}
                       onStatusChange={handleStatusChange}

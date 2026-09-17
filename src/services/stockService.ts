@@ -15,6 +15,7 @@ import { firestoreService, SyncStatus } from './firestoreService';
 import { authService } from './authService';
 import { isFirebaseConfigured } from './firebase';
 import { normalizePatenteDocId } from '../utils/firestoreSanitizer';
+import { normalizePatent } from '../utils/vehicleIdentity';
 
 const STOCK_STORAGE_KEY = 'autonet_stock_v2_real';
 const HISTORY_STORAGE_KEY = 'autonet_history_v2_real';
@@ -255,7 +256,11 @@ class StockService {
       // El onSnapshot actualizará la memoria y notificará
     } else {
       const stock = this.getAllVehicles();
-      const index = stock.findIndex((v) => v.id === updatedVehicle.id || v.patente === updatedVehicle.patente);
+      const targetPatent = normalizePatent(updatedVehicle.patente);
+      const index = targetPatent
+        ? stock.findIndex((v) => normalizePatent(v.patente) === targetPatent)
+        : stock.findIndex((v) => v.id === updatedVehicle.id);
+
       if (index !== -1) {
         stock[index] = updatedVehicle;
       } else {
@@ -293,18 +298,35 @@ class StockService {
   }
 
   public getVehicleByPatente(patente: string): Vehicle | undefined {
-    const cleanPatente = normalizePlate(patente);
+    const cleanPatente = normalizePatent(patente);
     return this.getAllVehicles().find(
-      (v) => normalizePlate(v.patente) === cleanPatente
+      (v) => normalizePatent(v.patente) === cleanPatente
     );
+  }
+
+  /**
+   * Localiza el índice de un vehículo en el stock priorizando estrictamente la patente normalizada.
+   */
+  private findVehicleIndex(identifier: string): number {
+    const stock = this.getAllVehicles();
+    const cleanPatent = normalizePatent(identifier);
+
+    // 1. Prioridad absoluta: coincidencia por patente normalizada
+    if (cleanPatent) {
+      const byPatent = stock.findIndex((v) => normalizePatent(v.patente) === cleanPatent);
+      if (byPatent !== -1) return byPatent;
+    }
+
+    // 2. Fallback de compatibilidad: coincidencia por ID si no se encontró por patente
+    return stock.findIndex((v) => v.id === identifier);
   }
 
   /**
    * Cambia el estado de un vehículo.
    */
-  public updateVehicleStatus(id: string, nuevoEstado: VehicleStatus, esManual: boolean = true): Vehicle | null {
+  public updateVehicleStatus(idOrPatente: string, nuevoEstado: VehicleStatus, esManual: boolean = true): Vehicle | null {
     const stock = this.getAllVehicles();
-    const index = stock.findIndex((v) => v.id === id);
+    const index = this.findVehicleIndex(idOrPatente);
     if (index === -1) return null;
 
     const current = stock[index];
@@ -339,7 +361,7 @@ class StockService {
    * Registra una unidad como vendida indicando si fue venta propia o de otro vendedor.
    */
   public markVehicleAsSold(
-    id: string,
+    idOrPatente: string,
     options: {
       saleOwner: 'self' | 'other';
       soldAt?: string;
@@ -348,7 +370,7 @@ class StockService {
     }
   ): Vehicle | null {
     const stock = this.getAllVehicles();
-    const index = stock.findIndex((v) => v.id === id);
+    const index = this.findVehicleIndex(idOrPatente);
     if (index === -1) return null;
 
     const current = stock[index];
@@ -385,7 +407,7 @@ class StockService {
    * Modifica los datos de una venta existente.
    */
   public updateSaleInfo(
-    id: string,
+    idOrPatente: string,
     options: {
       saleOwner: 'self' | 'other' | null;
       soldAt?: string;
@@ -393,7 +415,7 @@ class StockService {
     }
   ): Vehicle | null {
     const stock = this.getAllVehicles();
-    const index = stock.findIndex((v) => v.id === id);
+    const index = this.findVehicleIndex(idOrPatente);
     if (index === -1) return null;
 
     const current = stock[index];
@@ -423,9 +445,9 @@ class StockService {
   /**
    * Revierte un vehículo vendido o fuera de stock a Disponible.
    */
-  public revertVehicleToAvailable(id: string): Vehicle | null {
+  public revertVehicleToAvailable(idOrPatente: string): Vehicle | null {
     const stock = this.getAllVehicles();
-    const index = stock.findIndex((v) => v.id === id);
+    const index = this.findVehicleIndex(idOrPatente);
     if (index === -1) return null;
 
     const current = stock[index];
@@ -472,9 +494,9 @@ class StockService {
     return this.getAllVehicles().filter((v) => v.isHistorical || v.estado === 'fuera_de_stock');
   }
 
-  public updateVehicle(id: string, updates: Partial<Vehicle>): Vehicle | null {
+  public updateVehicle(idOrPatente: string, updates: Partial<Vehicle>): Vehicle | null {
     const stock = this.getAllVehicles();
-    const index = stock.findIndex((v) => v.id === id);
+    const index = this.findVehicleIndex(idOrPatente);
     if (index === -1) return null;
 
     const current = stock[index];

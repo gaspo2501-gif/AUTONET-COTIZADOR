@@ -18,6 +18,7 @@ import {
 import { Vehicle } from '../types/stock';
 import { stockService } from '../services/stockService';
 import { formatCurrency, formatKm } from '../utils/formatters';
+import { normalizePatent } from '../utils/vehicleIdentity';
 
 interface MySalesViewProps {
   vehicles: Vehicle[];
@@ -301,7 +302,7 @@ export const MySalesView: React.FC<MySalesViewProps> = ({
                   const isOtherSale = v.saleOwner === 'other';
 
                   return (
-                    <tr key={v.id} className="hover:bg-slate-50/70 transition-colors">
+                    <tr key={normalizePatent(v.patente) || v.id} className="hover:bg-slate-50/70 transition-colors">
                       {/* Patente */}
                       <td className="py-3.5 px-4 whitespace-nowrap">
                         <span className="px-2.5 py-1 rounded bg-slate-900 text-white font-mono font-bold">

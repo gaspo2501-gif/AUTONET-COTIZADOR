@@ -12,11 +12,12 @@ import {
 import { Vehicle } from '../types/stock';
 import { formatCurrency, formatKm } from '../utils/formatters';
 import { getSituacionOperativaInfo, getEmpresaBadgeClass } from '../utils/autonetHelpers';
+import { normalizePatent } from '../utils/vehicleIdentity';
 
 interface VehicleTableProps {
   vehicles: Vehicle[];
   onSelect: (vehicle: Vehicle) => void;
-  onStatusChange: (id: string, newStatus: 'Disponible' | 'Reservado' | 'Vendido') => void;
+  onStatusChange: (vehicleOrPatent: Vehicle | string, newStatus: 'Disponible' | 'Reservado' | 'Vendido') => void;
   onQuote?: (vehicle: Vehicle) => void;
   onOpenMarkAsSold?: (vehicle: Vehicle) => void;
 }
@@ -107,7 +108,7 @@ export const VehicleTable: React.FC<VehicleTableProps> = ({
 
               return (
                 <tr 
-                  key={v.id} 
+                  key={normalizePatent(v.patente) || v.id} 
                   className={`hover:bg-blue-50/40 transition-colors ${
                     v.estado === 'Vendido' ? 'bg-slate-50/70 text-slate-500' : ''
                   }`}
@@ -233,7 +234,7 @@ export const VehicleTable: React.FC<VehicleTableProps> = ({
                       {v.estado !== 'Vendido' && !v.isHistorical && (
                         <select
                           value={v.estado}
-                          onChange={(e) => onStatusChange(v.id, e.target.value as any)}
+                          onChange={(e) => onStatusChange(v, e.target.value as any)}
                           className="text-[11px] font-bold border border-slate-200 rounded-md py-1 px-1.5 bg-slate-50 text-slate-700 hover:bg-white outline-none cursor-pointer ml-1"
                         >
                           <option value="Disponible">Disponible</option>

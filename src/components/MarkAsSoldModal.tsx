@@ -22,7 +22,7 @@ interface MarkAsSoldModalProps {
     soldPrice?: number;
     observaciones?: string;
   }) => void;
-  onRevert?: (id: string) => void;
+  onRevert?: (vehicleOrPatent: Vehicle | string) => void;
 }
 
 export const MarkAsSoldModal: React.FC<MarkAsSoldModalProps> = ({
@@ -59,7 +59,7 @@ export const MarkAsSoldModal: React.FC<MarkAsSoldModalProps> = ({
 
   const handleRevert = () => {
     if (onRevert) {
-      onRevert(vehicle.id);
+      onRevert(vehicle);
       onClose();
     }
   };

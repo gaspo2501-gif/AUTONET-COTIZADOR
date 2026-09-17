@@ -15,11 +15,12 @@ import {
 import { Vehicle } from '../types/stock';
 import { formatCurrency, formatKm } from '../utils/formatters';
 import { getSituacionOperativaInfo, getEmpresaBadgeClass } from '../utils/autonetHelpers';
+import { normalizePatent } from '../utils/vehicleIdentity';
 
 interface VehicleCardProps {
   vehicle: Vehicle;
   onSelect: (vehicle: Vehicle) => void;
-  onStatusChange: (id: string, newStatus: 'Disponible' | 'Reservado' | 'Vendido') => void;
+  onStatusChange: (vehicleOrPatent: Vehicle | string, newStatus: 'Disponible' | 'Reservado' | 'Vendido') => void;
   onQuote?: (vehicle: Vehicle) => void;
   onOpenMarkAsSold?: (vehicle: Vehicle) => void;
 }
@@ -232,7 +233,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
         {vehicle.estado === 'Disponible' ? (
           <button
             id={`marcar-vendido-${vehicle.id}`}
-            onClick={() => onOpenMarkAsSold ? onOpenMarkAsSold(vehicle) : onStatusChange(vehicle.id, 'Vendido')}
+            onClick={() => onOpenMarkAsSold ? onOpenMarkAsSold(vehicle) : onStatusChange(vehicle, 'Vendido')}
             title="Registrar venta (especificar si es propia o de otro asesor)"
             className="py-2 px-2.5 rounded-lg border border-slate-200 text-slate-600 hover:text-rose-600 hover:bg-rose-50 hover:border-rose-200 text-xs font-semibold transition-colors"
           >
@@ -252,7 +253,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
             )}
             <button
               id={`marcar-disponible-${vehicle.id}`}
-              onClick={() => onStatusChange(vehicle.id, 'Disponible')}
+              onClick={() => onStatusChange(vehicle, 'Disponible')}
               title="Reactivar a Disponible"
               className="py-2 px-2 rounded-lg border border-slate-200 text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 hover:border-emerald-200 text-xs font-semibold transition-colors"
             >
@@ -262,7 +263,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
         ) : (
           <button
             id={`marcar-disponible-${vehicle.id}`}
-            onClick={() => onStatusChange(vehicle.id, 'Disponible')}
+            onClick={() => onStatusChange(vehicle, 'Disponible')}
             title="Liberar reserva"
             className="py-2 px-2.5 rounded-lg border border-slate-200 text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 hover:border-emerald-200 text-xs font-semibold transition-colors"
           >
