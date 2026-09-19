@@ -1,5 +1,5 @@
-export function formatCurrency(amount: number, currency: 'ARS' | 'USD' = 'ARS'): string {
-  if (isNaN(amount)) return '$ 0';
+export function formatCurrency(amount: number | null | undefined, currency: 'ARS' | 'USD' = 'ARS'): string {
+  if (amount === null || amount === undefined || isNaN(amount)) return 'A confirmar';
   return new Intl.NumberFormat('es-AR', {
     style: 'currency',
     currency,
@@ -97,7 +97,8 @@ export function normalizeMileage(value: number | string | null | undefined): num
 
 export function formatKm(km: number | string | null | undefined): string {
   const normalized = normalizeMileage(km);
-  if (normalized === null || isNaN(normalized)) return '0 km';
+  if (normalized === null || isNaN(normalized)) return 'A confirmar';
+  if (normalized === 0) return '0 km';
   return `${normalized.toLocaleString('es-AR')} km`;
 }
 

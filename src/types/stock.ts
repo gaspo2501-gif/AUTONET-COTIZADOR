@@ -10,9 +10,10 @@ export interface Vehicle {
   modelo: string;
   version: string;
   anio: number;
-  color: string;
-  kilometraje: number;
-  precio: number;
+  color: string | null;
+  kilometraje: number | null;
+  precio: number | null;
+  precioEstado?: 'DEFINIDO' | 'A_CONFIRMAR';
   moneda: 'ARS' | 'USD';
   patente: string; // Dominio identificador único (ej. AF 123 CD)
   combustible: VehicleFuel;
@@ -27,6 +28,7 @@ export interface Vehicle {
   fechaActualizacion: string; // ISO string
   fechaIncorporacion: string; // ISO string
   origenDato: 'autonet_pdf' | 'autonet_web' | 'manual';
+  source?: 'pdf_parser' | 'pdf_manual_resolution' | 'manual';
   
   // Control de ventas comerciales
   saleOwner?: SaleOwner; // 'self' = vendida por mí, 'other' = vendida por otro vendedor, null = sin clasificar
@@ -78,6 +80,7 @@ export interface VehicleDiffItem {
 }
 
 export interface DiscardedRecordDetail {
+  id?: string;
   page?: number;
   rowNumber?: number;
   raw: string;
@@ -103,6 +106,17 @@ export interface DiscardedRecordDetail {
     | 'precio_invalido'
     | 'columnas_incompletas'
     | 'otros';
+  source?: 'pdf_parser' | 'pdf_manual_resolution';
+  timestamp?: string;
+}
+
+export interface CustomBrand {
+  name: string;
+  createdAt: string;
+}
+
+export interface ParserConfig {
+  customBrands: string[];
 }
 
 export interface DiscardedSummary {

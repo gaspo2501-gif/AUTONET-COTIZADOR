@@ -358,6 +358,45 @@ class StockService {
   }
 
   /**
+   * Agrega o actualiza un vehículo individual (incorporación manual o recuperado de descartes).
+   */
+  public addOrUpdateVehicle(vehicle: Vehicle): Vehicle {
+    const stock = this.getAllVehicles();
+    const targetPatent = normalizePatent(vehicle.patente);
+    const index = targetPatent
+      ? stock.findIndex((v) => normalizePatent(v.patente) === targetPatent)
+      : stock.findIndex((v) => v.id === vehicle.id);
+
+    const nowIso = new Date().toISOString();
+    const prepared: Vehicle = {
+      ...vehicle,
+      precio: vehicle.precio !== undefined ? vehicle.precio : null,
+      precioEstado: vehicle.precioEstado || (vehicle.precio ? 'DEFINIDO' : 'A_CONFIRMAR'),
+      fechaActualizacion: nowIso,
+      fechaIncorporacion: vehicle.fechaIncorporacion || nowIso,
+      source: vehicle.source || 'manual',
+    };
+
+    if (index !== -1) {
+      stock[index] = prepared;
+    } else {
+      stock.unshift(prepared);
+    }
+
+    if (this.isCloudActive && this.currentUserId) {
+      firestoreService.saveVehicle(this.currentUserId, prepared).catch((err) => {
+        console.error('Error al guardar vehículo manual en Firestore:', err);
+      });
+      this.memoryStock = stock;
+      this.notify();
+    } else {
+      this.saveLocalStockOnly(stock);
+    }
+
+    return prepared;
+  }
+
+  /**
    * Registra una unidad como vendida indicando si fue venta propia o de otro vendedor.
    */
   public markVehicleAsSold(
@@ -571,9 +610,10 @@ class StockService {
           modelo: item.vehiculoNuevo.modelo || 'Sin Modelo',
           version: cleanVersion(item.vehiculoNuevo.version || ''),
           anio: item.vehiculoNuevo.anio || new Date().getFullYear(),
-          color: item.vehiculoNuevo.color || 'A confirmar',
-          kilometraje: normalizeMileage(item.vehiculoNuevo.kilometraje) ?? 0,
-          precio: item.vehiculoNuevo.precio || 0,
+          color: item.vehiculoNuevo.color !== undefined ? item.vehiculoNuevo.color : null,
+          kilometraje: item.vehiculoNuevo.kilometraje !== undefined ? normalizeMileage(item.vehiculoNuevo.kilometraje) : null,
+          precio: item.vehiculoNuevo.precio !== undefined ? item.vehiculoNuevo.precio : null,
+          precioEstado: item.vehiculoNuevo.precioEstado || (item.vehiculoNuevo.precio ? 'DEFINIDO' : 'A_CONFIRMAR'),
           moneda: item.vehiculoNuevo.moneda || 'ARS',
           patente: key,
           combustible: item.vehiculoNuevo.combustible || 'Nafta',
@@ -594,6 +634,7 @@ class StockService {
           fechaIncorporacion: nowIso,
           fechaActualizacion: nowIso,
           origenDato: 'autonet_pdf',
+          source: item.vehiculoNuevo.source || 'pdf_parser',
           provinciaRadicacion: 'Neuquén',
           isHistorical: false,
         };
@@ -608,12 +649,18 @@ class StockService {
         if (item.cambios && item.cambios.length > 0) {
           item.cambios.forEach((c) => {
             if (c.campo === 'precio') {
-              newProps.precio =
-                typeof c.valorNuevo === 'number'
-                  ? c.valorNuevo
-                  : Number(String(c.valorNuevo).replace(/[^0-9]/g, '')) || 0;
+              if (c.valorNuevo === 'A confirmar' || c.valorNuevo === null || c.valorNuevo === undefined) {
+                newProps.precio = null;
+                newProps.precioEstado = 'A_CONFIRMAR';
+              } else {
+                newProps.precio =
+                  typeof c.valorNuevo === 'number'
+                    ? c.valorNuevo
+                    : Number(String(c.valorNuevo).replace(/[^0-9]/g, '')) || null;
+                newProps.precioEstado = newProps.precio ? 'DEFINIDO' : 'A_CONFIRMAR';
+              }
             } else if (c.campo === 'kilometraje') {
-              newProps.kilometraje = normalizeMileage(c.valorNuevo) ?? 0;
+              newProps.kilometraje = normalizeMileage(c.valorNuevo);
             } else if (c.campo === 'anio') {
               (newProps as any)[c.campo] =
                 typeof c.valorNuevo === 'number'

@@ -1,5 +1,5 @@
 import { Vehicle, ProvinceTransfer } from '../types/stock';
-import { formatCurrency } from '../utils/formatters';
+import { formatCurrency, formatKm } from '../utils/formatters';
 import { ADVISOR_INFO } from '../constants/advisor';
 
 export interface AdvisorSettings {
@@ -43,8 +43,8 @@ export interface CommercialBudget {
     modelo: string;
     version: string;
     anio: number;
-    kilometraje: number;
-    color: string;
+    kilometraje: number | null;
+    color: string | null;
     patente: string;
     combustible: string;
     caja: string;
@@ -261,13 +261,13 @@ class QuoteService {
    * Formatea un mensaje de WhatsApp para compartir los datos del vehículo con firma fija.
    */
   public formatVehicleShareMessage(vehicle: Vehicle): string {
-    const kmStr = new Intl.NumberFormat('es-AR').format(vehicle.kilometraje);
+    const kmStr = formatKm(vehicle.kilometraje);
     const precioStr = formatCurrency(vehicle.precio, vehicle.moneda);
     return `🚗 *AUTONET USADOS SELECCIONADOS*
 *${vehicle.marca} ${vehicle.modelo} ${vehicle.version} (${vehicle.anio})*
 
 📅 *Año:* ${vehicle.anio}
-🛣️ *Kilometraje:* ${kmStr} km
+🛣️ *Kilometraje:* ${kmStr}
 🎨 *Color:* ${vehicle.color || 'A confirmar'}
 ⛽ *Combustible:* ${vehicle.combustible || 'Nafta'}
 🕹️ *Transmisión:* ${vehicle.caja || 'Manual'}

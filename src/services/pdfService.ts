@@ -1,4 +1,4 @@
-import * as pdfjsLib from 'pdfjs-dist';
+import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { 
   DiffResult, 
   FieldChange, 
@@ -303,6 +303,40 @@ export const CONTROLLED_BRANDS: { code: string; regex: RegExp; standard: string 
   { code: 'IVECO', regex: /\bIVECO\b/i, standard: 'IVECO' },
 ];
 
+/**
+ * Registro de marcas personalizadas agregadas dinámicamente o sincronizadas desde Firestore (users/{uid}/config/parser).
+ */
+export const CUSTOM_BRANDS: { code: string; regex: RegExp; standard: string }[] = [];
+
+export function registerCustomBrand(brandName: string): boolean {
+  const clean = brandName.trim().toUpperCase();
+  if (!clean || clean.length < 2) return false;
+
+  // Verificar si ya existe en las controladas fijas o en las personalizadas
+  const existsInControlled = CONTROLLED_BRANDS.some((b) => b.standard === clean);
+  const existsInCustom = CUSTOM_BRANDS.some((b) => b.standard === clean);
+  if (existsInControlled || existsInCustom) return true;
+
+  const escaped = escapeRegExp(clean);
+  CUSTOM_BRANDS.push({
+    code: clean,
+    regex: new RegExp(`\\b${escaped}\\b`, 'i'),
+    standard: clean,
+  });
+  console.log(`[PDF-PARSER] Marca personalizada registrada exitosamente: ${clean}`);
+  return true;
+}
+
+export function registerCustomBrands(brandNames: string[]): void {
+  if (Array.isArray(brandNames)) {
+    brandNames.forEach(b => registerCustomBrand(b));
+  }
+}
+
+export function getAllControlledBrands(): { code: string; regex: RegExp; standard: string }[] {
+  return [...CONTROLLED_BRANDS, ...CUSTOM_BRANDS];
+}
+
 export const KNOWN_BRANDS: BrandDefinition[] = CONTROLLED_BRANDS.map(b => ({
   regex: b.regex,
   standard: b.standard
@@ -535,9 +569,10 @@ export function parseVehicleDescription(rawDescription: string): ParsedVehicleDe
   // 2. Descartar prefijos de clasificación interna si quedaron al inicio
   let cleanInput = rawClean.replace(/^(?:P\s*-\s*(?:C|T|TS|PA|AK|A)|P\s*-\s*|0\s*KM|0KM|FLOTA|TS|PA|AK|T|C|A)\b\s*/i, '').trim();
 
-  // 3. Detectar la marca automotriz a partir de la lista controlada
+  // 3. Detectar la marca automotriz a partir de la lista controlada (incluyendo marcas personalizadas registradas)
+  const activeBrands = getAllControlledBrands();
   let earliestBrand: { code: string; standard: string; index: number; length: number } | null = null;
-  for (const b of CONTROLLED_BRANDS) {
+  for (const b of activeBrands) {
     const m = cleanInput.match(b.regex);
     if (m && m.index !== undefined) {
       if (!earliestBrand || m.index < earliestBrand.index) {
@@ -553,7 +588,7 @@ export function parseVehicleDescription(rawDescription: string): ParsedVehicleDe
 
   if (!earliestBrand) {
     // Intento con rawClean completo
-    for (const b of CONTROLLED_BRANDS) {
+    for (const b of activeBrands) {
       const m = rawClean.match(b.regex);
       if (m && m.index !== undefined) {
         if (!earliestBrand || m.index < earliestBrand.index) {
@@ -832,18 +867,18 @@ export class PdfService {
     // Límites calibrados por defecto para el formato apaisado estándar de Autonet (~842 pt de ancho)
     const scale = pageWidth > 0 ? pageWidth / 842 : 1;
     const defaultBounds: Record<TableColumnKey, ColumnRange> = {
-      orden: { min: 0 * scale, max: 40 * scale },
-      prefijo: { min: 40 * scale, max: 72 * scale },
-      vehiculo: { min: 72 * scale, max: 360 * scale },
-      ub: { min: 360 * scale, max: 400 * scale },
-      tipo: { min: 400 * scale, max: 430 * scale },
-      patente: { min: 430 * scale, max: 500 * scale },
-      anio: { min: 500 * scale, max: 545 * scale },
-      color: { min: 545 * scale, max: 605 * scale },
-      km: { min: 605 * scale, max: 675 * scale },
-      empresa: { min: 675 * scale, max: 745 * scale },
-      precio: { min: 745 * scale, max: 815 * scale },
-      fechaToma: { min: 815 * scale, max: 2000 * scale },
+      orden: { min: 0 * scale, max: 90 * scale },
+      prefijo: { min: 90 * scale, max: 125 * scale },
+      vehiculo: { min: 125 * scale, max: 365 * scale },
+      ub: { min: 365 * scale, max: 391 * scale },
+      tipo: { min: 391 * scale, max: 427 * scale },
+      patente: { min: 427 * scale, max: 467 * scale },
+      anio: { min: 467 * scale, max: 510 * scale },
+      color: { min: 510 * scale, max: 556 * scale },
+      km: { min: 556 * scale, max: 609 * scale },
+      empresa: { min: 609 * scale, max: 667 * scale },
+      precio: { min: 667 * scale, max: 727 * scale },
+      fechaToma: { min: 727 * scale, max: 2000 * scale },
     };
 
     // Buscar si alguna fila contiene los encabezados reales
@@ -858,30 +893,24 @@ export class PdfService {
       const headerMatches = [hasPatenteHdr, hasUnidadHdr, hasKmHdr, hasPrecioHdr, hasAnioHdr].filter(Boolean).length;
       if (headerMatches >= 3) {
         // Encontramos la fila de encabezados: medir posiciones reales de tokens clave
-        let vehiculoLeft = 72 * scale;
-        let vehiculoRight = 360 * scale;
-        let ubCenter = 380 * scale;
-        let tipoCenter = 415 * scale;
-        let patenteCenter = 465 * scale;
-        let anioCenter = 522 * scale;
-        let colorCenter = 575 * scale;
-        let kmCenter = 640 * scale;
-        let empresaCenter = 710 * scale;
-        let precioCenter = 780 * scale;
-        let fechaTomaCenter = 835 * scale;
+        let vehiculoLeft = 125 * scale;
+        let vehiculoRight = 365 * scale;
+        let ubCenter = 374 * scale;
+        let tipoCenter = 408 * scale;
+        let patenteCenter = 446 * scale;
+        let anioCenter = 488 * scale;
+        let colorCenter = 532 * scale;
+        let kmCenter = 581 * scale;
+        let empresaCenter = 637 * scale;
+        let precioCenter = 697 * scale;
+        let fechaTomaCenter = 758 * scale;
 
         for (const token of row.tokens) {
           const tText = token.text.toUpperCase();
           const tCenter = token.x + token.width / 2;
 
-          if (tText.includes('UNIDAD')) {
-            vehiculoLeft = Math.min(75 * scale, Math.max(65 * scale, token.x - 30));
-          }
-          if (tText.includes('VERSION') || tText.includes('MODELO')) {
-            vehiculoRight = Math.max(vehiculoRight, token.x + token.width);
-          }
-          if (tText === 'UB' || tText.includes('UB')) ubCenter = tCenter;
-          if (tText === 'TIPO' || tText.includes('TIPO')) tipoCenter = tCenter;
+          if (tText.includes('UB')) ubCenter = tCenter;
+          if (tText.includes('TIPO')) tipoCenter = tCenter;
           if (tText.includes('PATENTE') || tText.includes('DOMINIO')) patenteCenter = tCenter;
           if (tText.includes('AÑO') || tText.includes('ANO')) anioCenter = tCenter;
           if (tText.includes('COLOR')) colorCenter = tCenter;
@@ -891,7 +920,7 @@ export class PdfService {
           if (tText.includes('TOMA') || tText.includes('FECHA')) fechaTomaCenter = tCenter;
         }
 
-        const ordenMax = Math.min(40 * scale, vehiculoLeft * 0.55);
+        const ordenMax = Math.min(90 * scale, vehiculoLeft * 0.72);
         return {
           orden: { min: 0, max: ordenMax },
           prefijo: { min: ordenMax, max: vehiculoLeft },
@@ -942,9 +971,9 @@ export class PdfService {
       let assigned = false;
       for (const [colKey, range] of Object.entries(bounds) as [TableColumnKey, ColumnRange][]) {
         if (tokenCenter >= range.min && tokenCenter < range.max) {
-          // Protección: si cae en columna 'vehiculo' pero es un prefijo interno en x < 75 pt,
+          // Protección: si cae en columna 'vehiculo' pero es un prefijo interno en x < 125 pt,
           // pertenece a la primera columna ('prefijo').
-          if (colKey === 'vehiculo' && token.x < 75 && (isInternalCode(token.text) || BANNED_VERSION_PREFIX_REGEX.test(token.text.trim()))) {
+          if (colKey === 'vehiculo' && token.x < 125 && (isInternalCode(token.text) || BANNED_VERSION_PREFIX_REGEX.test(token.text.trim()) || /^(0\s*KM|AK|T|P\s*-\s*A|P)$/i.test(token.text.trim()))) {
             colTokens.prefijo.push(token);
             assigned = true;
             break;
@@ -1259,7 +1288,7 @@ export class PdfService {
 
         // Si aún no se detectó marca, buscar marcas controladas en la fila cruda completa
         if (parsedDesc.marca === 'DESCONOCIDA') {
-          for (const b of CONTROLLED_BRANDS) {
+          for (const b of getAllControlledBrands()) {
             const m = combinedRaw.match(b.regex);
             if (m && m.index !== undefined) {
               const fromBrand = combinedRaw.slice(m.index);
@@ -1336,57 +1365,35 @@ export class PdfService {
         }
         const anio = parseInt(yearMatch[1], 10);
 
-        // 3. KILOMETRAJE (columna KM normalizada numéricamente, nunca bloqueante si está ausente/0)
-        let kmNum = parseMileage(assembledKm);
-        if (kmNum === null) {
-          const tokensAfterPlate = plateTokenIdx >= 0 ? combinedTokens.slice(plateTokenIdx + 1) : combinedTokens;
-          for (const t of tokensAfterPlate) {
-            if (t.text.match(/\b\d{1,3}(?:\.\d{3})+\b/) || t.text === '0' || /^\d{1,6}$/.test(t.text)) {
-              const val = parseMileage(t.text);
-              if (val !== null && val < 500000) {
-                kmNum = val;
-                assembledKm = t.text;
-                break;
-              }
+        // 3. KILOMETRAJE
+        // Se respeta la columna KM según coordenadas X reales.
+        // Si no existe token dentro del rango de KM: kilometraje = null.
+        // No convertir ausencia de KM en 0. No reutilizar año como kilometraje.
+        let kilometraje: number | null = null;
+        const rawKm = assembledKm.trim();
+        if (rawKm && rawKm !== '-') {
+          if (/^(0|0\s*km|cero)$/i.test(rawKm)) {
+            kilometraje = 0;
+          } else {
+            const parsed = parseMileage(rawKm);
+            if (parsed !== null && !isNaN(parsed) && parsed >= 0) {
+              kilometraje = parsed;
             }
           }
         }
-        if (kmNum === null || isNaN(kmNum) || kmNum < 0) {
-          kmNum = 0; // Default a 0 km para unidades nuevas o sin kilometraje consignado
-        }
-        const kilometraje = kmNum;
 
         // 4. PRECIO (columna VR VENTA normalizada con parsePrice)
-        let precioNum = parsePrice(assembledPrecio);
-        if (precioNum === null || precioNum <= 100000) {
-          const tokensAfterPlate = plateTokenIdx >= 0 ? combinedTokens.slice(plateTokenIdx + 1) : combinedTokens;
-          for (const t of tokensAfterPlate) {
-            const p = parsePrice(t.text);
-            if (p && p >= 500000) {
-              precioNum = p;
-              assembledPrecio = t.text;
-              break;
-            }
-          }
+        let precioNum: number | null = null;
+        const rawPrecio = assembledPrecio.trim();
+        if (rawPrecio && rawPrecio !== '-') {
+          precioNum = parsePrice(rawPrecio);
         }
 
-        if (precioNum === null || precioNum <= 0) {
-          discardedRecords.push(
-            this.createDiscardedRecord({
-              page: row.page,
-              rowNumber: recordsReconstructed,
-              raw: combinedRaw,
-              tokens: combinedTokens,
-              cols: cols.strings,
-              plate: identifiedPlate,
-              reason: `Registro descartado: precio no numérico o inválido en columna VR VENTA (valor recibido: '${assembledPrecio}').`,
-              category: 'precio_invalido',
-            })
-          );
-          console.warn(`[PDF-PARSER] Registro descartado: Precio inválido (${assembledPrecio}) para patente ${identifiedPlate}`);
-          continue;
+        const precio: number | null = (precioNum !== null && precioNum > 0) ? precioNum : null;
+        const precioEstado: 'DEFINIDO' | 'A_CONFIRMAR' = precio !== null ? 'DEFINIDO' : 'A_CONFIRMAR';
+        if (precio === null) {
+          console.warn(`[PDF-PARSER] Vehículo admitido con precio a confirmar para patente ${identifiedPlate} (valor en columna VR VENTA: '${assembledPrecio}')`);
         }
-        const precio = precioNum;
 
         // 5. UBICACIÓN (Ub) y TIPO
         const ubCode = assembledUb.trim().toUpperCase() || 'P';
@@ -1395,7 +1402,8 @@ export class PdfService {
 
         // 6. EMPRESA, COLOR, FECHA TOMA
         const empresa = assembledEmpresa.trim() || 'AUTONET';
-        const color = assembledColor.trim() || 'Consultar';
+        const rawColor = assembledColor.trim();
+        const color: string | null = (rawColor && rawColor !== '-') ? rawColor : null;
         const fechaToma = assembledFechaToma.trim() || '-';
 
         // 7. Deduplicación por patente
@@ -1429,6 +1437,7 @@ export class PdfService {
           color,
           kilometraje,
           precio,
+          precioEstado,
           moneda: 'ARS',
           patente: identifiedPlate,
           combustible: 'Nafta',
@@ -1446,12 +1455,13 @@ export class PdfService {
           fotos: [],
           sincronizadoAutonetWeb: false,
           origenDato: 'autonet_pdf',
+          source: 'pdf_parser',
         };
 
         validVehicles.push(vehicle);
 
         console.log(
-          `[PDF-PARSER] VALID VEHICLE #${numOrden}: ${marca} ${modelo} (${anio}) | Patente: ${identifiedPlate} | KM: ${kilometraje} | Precio: ${precio.toLocaleString('es-AR')} | Ub: ${ubCode} | Tipo: ${tipoVehiculo}`
+          `[PDF-PARSER] VALID VEHICLE #${numOrden}: ${marca} ${modelo} (${anio}) | Patente: ${identifiedPlate} | KM: ${kilometraje} | Precio: ${precio !== null ? precio.toLocaleString('es-AR') : 'A CONFIRMAR'} | Ub: ${ubCode} | Tipo: ${tipoVehiculo}`
         );
       }
 
@@ -1572,7 +1582,8 @@ export class PdfService {
       }
 
       // Buscar marca automotriz válida
-      const brandDef = KNOWN_BRANDS.find((b) => b.regex.test(line));
+      const allBrands = getAllControlledBrands();
+      const brandDef = allBrands.find((b) => b.regex.test(line));
       if (!brandDef || brandDef.standard.toLowerCase() === 'autonet') {
         discardedRecords.push({
           raw: line,
@@ -1712,29 +1723,34 @@ export class PdfService {
         // Vehículo existente en stock actual: comparar campos
         const changes: FieldChange[] = [];
 
-        // Precio (comparación numérica estricta para evitar falsos positivos)
-        const incPrice = parseNumericPrice(incoming.precio);
-        const existPrice = parseNumericPrice(existing.precio);
-        if (incoming.precio !== undefined && incPrice > 0 && existPrice > 0 && incPrice !== existPrice) {
+        // Precio (comparación numérica estricta o transición a/desde A_CONFIRMAR)
+        const incPrice = incoming.precio !== null && incoming.precio !== undefined ? parseNumericPrice(incoming.precio) : null;
+        const existPrice = existing.precio !== null && existing.precio !== undefined ? parseNumericPrice(existing.precio) : null;
+        const incPrecioEstado = incoming.precioEstado || (incPrice === null ? 'A_CONFIRMAR' : 'DEFINIDO');
+        const existPrecioEstado = existing.precioEstado || (existPrice === null ? 'A_CONFIRMAR' : 'DEFINIDO');
+
+        if (incPrecioEstado !== existPrecioEstado || (incPrice !== null && existPrice !== null && incPrice > 0 && existPrice > 0 && incPrice !== existPrice)) {
           cambiosPrecioCount++;
           changes.push({
             campo: 'precio',
             etiqueta: 'Precio de venta',
-            valorAnterior: existPrice,
-            valorNuevo: incPrice,
+            valorAnterior: existPrice !== null ? existPrice : 'A confirmar',
+            valorNuevo: incPrice !== null ? incPrice : 'A confirmar',
           });
         }
 
-        // Kilometraje (con normalización numérica estricta)
-        const incKm = normalizeMileage(incoming.kilometraje) ?? 0;
-        const existKm = normalizeMileage(existing.kilometraje) ?? 0;
-        if (incoming.kilometraje !== undefined && incKm > 0 && existKm > 0 && incKm !== existKm) {
-          changes.push({
-            campo: 'kilometraje',
-            etiqueta: 'Kilometraje',
-            valorAnterior: existKm,
-            valorNuevo: incKm,
-          });
+        // Kilometraje (con normalización numérica y soporte para null)
+        const incKm = incoming.kilometraje;
+        const existKm = existing.kilometraje;
+        if (incKm !== undefined && incKm !== existKm) {
+          if ((incKm !== null && existKm !== null && incKm !== existKm) || (incKm !== null && existKm === null) || (incKm === null && existKm !== null)) {
+            changes.push({
+              campo: 'kilometraje',
+              etiqueta: 'Kilometraje',
+              valorAnterior: existKm !== null ? existKm : 'A confirmar',
+              valorNuevo: incKm !== null ? incKm : 'A confirmar',
+            });
+          }
         }
 
         // Marca: normalizar mayúsculas/espacios. Solo contar si difiere comercialmente o si corregimos "Autonet"

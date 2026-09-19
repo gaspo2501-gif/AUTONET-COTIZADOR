@@ -31,6 +31,26 @@ export const StockFiltersBar: React.FC<StockFiltersBarProps> = ({
 }) => {
   const [showAdvanced, setShowAdvanced] = React.useState(false);
 
+  // Buffer local con debounce para el buscador (optimiza rendimiento y respuesta al tipear)
+  const [localSearch, setLocalSearch] = React.useState(filters.searchQuery);
+
+  React.useEffect(() => {
+    setLocalSearch(filters.searchQuery);
+  }, [filters.searchQuery]);
+
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      if (localSearch !== filters.searchQuery) {
+        onFilterChange({
+          ...filters,
+          searchQuery: localSearch,
+        });
+      }
+    }, 100);
+
+    return () => clearTimeout(timer);
+  }, [localSearch, filters, onFilterChange]);
+
   // Marcas únicas en el stock actual
   const marcasDisponibles = React.useMemo(() => {
     const set = new Set<string>();
@@ -141,7 +161,7 @@ export const StockFiltersBar: React.FC<StockFiltersBarProps> = ({
   const currentCommercial = filters.estadoComercial || 'activo';
 
   return (
-    <div className="bg-white rounded-xl shadow-xs border border-slate-200/90 p-3.5 sm:p-4 mb-5 transition-all">
+    <div className="bg-white rounded-xl shadow-xs border border-slate-200/90 p-3.5 sm:p-4 mb-5 transition-all sticky top-16 z-30 md:static md:top-auto md:z-auto">
       
       {/* 1. Selector de Vistas Comerciales (Switchers de estilo Autonet) */}
       <div className="flex items-center gap-1.5 overflow-x-auto pb-2.5 mb-3 border-b border-slate-100 scrollbar-none">
@@ -285,15 +305,21 @@ export const StockFiltersBar: React.FC<StockFiltersBarProps> = ({
           <input
             id="stock-search-input"
             type="text"
-            value={filters.searchQuery}
-            onChange={(e) => updateFilter('searchQuery', e.target.value)}
+            value={localSearch}
+            onChange={(e) => setLocalSearch(e.target.value)}
             placeholder="Buscar por patente, marca, modelo, versión..."
-            className="w-full pl-9 pr-9 py-2 bg-slate-50 hover:bg-slate-100/70 focus:bg-white text-slate-800 placeholder-slate-400 text-xs sm:text-sm rounded-lg border border-slate-200 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 outline-none transition-all"
+            autoCapitalize="characters"
+            autoCorrect="off"
+            spellCheck="false"
+            className="w-full pl-9 pr-9 py-2.5 sm:py-2 bg-slate-50 hover:bg-slate-100/70 focus:bg-white text-slate-800 placeholder-slate-400 text-sm sm:text-xs md:text-sm rounded-lg border border-slate-200 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 outline-none transition-all uppercase sm:normal-case font-medium"
           />
-          {filters.searchQuery && (
+          {localSearch && (
             <button
-              onClick={() => updateFilter('searchQuery', '')}
-              className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600"
+              onClick={() => {
+                setLocalSearch('');
+                updateFilter('searchQuery', '');
+              }}
+              className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer"
               title="Borrar búsqueda"
             >
               <X className="w-4 h-4" />

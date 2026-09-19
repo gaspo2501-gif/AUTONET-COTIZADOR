@@ -23,6 +23,7 @@ import {
 import { Navbar, NavTab } from './components/Navbar';
 import { StockFiltersBar } from './components/StockFiltersBar';
 import { VehicleCard } from './components/VehicleCard';
+import { MobileCompactVehicleCard } from './components/MobileCompactVehicleCard';
 import { VehicleTable } from './components/VehicleTable';
 import { VehicleDetailModal } from './components/VehicleDetailModal';
 import { VehicleQuoteModal } from './components/VehicleQuoteModal';
@@ -66,6 +67,7 @@ export default function App() {
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
   const [sortBy, setSortBy] = useState<'disponibles_primero' | 'precio_asc' | 'precio_desc' | 'km_asc' | 'anio_desc'>('disponibles_primero');
   const [filters, setFilters] = useState<StockFilters>(DEFAULT_FILTERS);
+  const [visibleLimitMobile, setVisibleLimitMobile] = useState<number>(30);
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
   const [quoteVehicle, setQuoteVehicle] = useState<Vehicle | null>(null);
   const [activeBudget, setActiveBudget] = useState<CommercialBudget | null>(null);
@@ -222,6 +224,7 @@ export default function App() {
   // Restablecimiento estricto de filtros: vuelve a Stock Activo y borra avanzados
   const resetFilters = () => {
     setFilters({ ...DEFAULT_FILTERS });
+    setVisibleLimitMobile(30);
   };
 
   // Conteos globales centralizados (ÚNICA FUENTE DE VERDAD)
@@ -251,8 +254,16 @@ export default function App() {
         return b.anio - a.anio;
       }
 
-      if (sortBy === 'precio_asc') return a.precio - b.precio;
-      if (sortBy === 'precio_desc') return b.precio - a.precio;
+      if (sortBy === 'precio_asc') {
+        const pA = a.precio !== null && a.precio !== undefined ? a.precio : Infinity;
+        const pB = b.precio !== null && b.precio !== undefined ? b.precio : Infinity;
+        return pA - pB;
+      }
+      if (sortBy === 'precio_desc') {
+        const pA = a.precio !== null && a.precio !== undefined ? a.precio : -Infinity;
+        const pB = b.precio !== null && b.precio !== undefined ? b.precio : -Infinity;
+        return pB - pA;
+      }
       if (sortBy === 'km_asc') return (normalizeMileage(a.kilometraje) ?? 0) - (normalizeMileage(b.kilometraje) ?? 0);
       if (sortBy === 'anio_desc') return b.anio - a.anio;
 
@@ -264,6 +275,16 @@ export default function App() {
   useEffect(() => {
     validateVisibleVehiclesIntegrity(filters.estadoComercial || 'activo', visibleVehicles);
   }, [filters.estadoComercial, visibleVehicles]);
+
+  // Cuando cambia cualquier filtro o búsqueda, reiniciamos el límite de scroll móvil
+  useEffect(() => {
+    setVisibleLimitMobile(30);
+  }, [filters]);
+
+  // Lista con ventana progresiva para pantallas móviles (evita montar cientos de nodos DOM a la vez)
+  const mobileVisibleVehicles = useMemo(() => {
+    return visibleVehicles.slice(0, visibleLimitMobile);
+  }, [visibleVehicles, visibleLimitMobile]);
 
   const commercialLabel = useMemo(() => {
     const norm = normalizeCommercialView(filters.estadoComercial);
@@ -503,18 +524,45 @@ export default function App() {
                   </button>
                 </div>
               ) : viewMode === 'cards' ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5">
-                  {visibleVehicles.map((vehicle) => (
-                    <VehicleCard
-                      key={normalizePatent(vehicle.patente) || vehicle.id}
-                      vehicle={vehicle}
-                      onSelect={setSelectedVehicle}
-                      onStatusChange={handleStatusChange}
-                      onQuote={handleOpenQuote}
-                      onOpenMarkAsSold={handleOpenMarkAsSold}
-                    />
-                  ))}
-                </div>
+                <>
+                  {/* Vista MÓVIL (<= 768px: md:hidden) Compacta de Alto Rendimiento */}
+                  <div className="md:hidden flex flex-col gap-2.5">
+                    {mobileVisibleVehicles.map((vehicle) => (
+                      <MobileCompactVehicleCard
+                        key={normalizePatent(vehicle.patente) || vehicle.id}
+                        vehicle={vehicle}
+                        onSelect={setSelectedVehicle}
+                      />
+                    ))}
+
+                    {/* Botón de carga progresiva para móvil cuando hay más unidades */}
+                    {visibleVehicles.length > visibleLimitMobile && (
+                      <div className="pt-2 pb-4 text-center">
+                        <button
+                          type="button"
+                          onClick={() => setVisibleLimitMobile((prev) => prev + 30)}
+                          className="w-full py-3 px-4 bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-slate-800 text-xs font-bold rounded-xl border border-slate-300 transition-colors shadow-2xs cursor-pointer"
+                        >
+                          Cargar 30 unidades más ({visibleVehicles.length - visibleLimitMobile} restantes)
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Vista DESKTOP (> 768px: hidden md:grid) Inalterada */}
+                  <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5">
+                    {visibleVehicles.map((vehicle) => (
+                      <VehicleCard
+                        key={normalizePatent(vehicle.patente) || vehicle.id}
+                        vehicle={vehicle}
+                        onSelect={setSelectedVehicle}
+                        onStatusChange={handleStatusChange}
+                        onQuote={handleOpenQuote}
+                        onOpenMarkAsSold={handleOpenMarkAsSold}
+                      />
+                    ))}
+                  </div>
+                </>
               ) : (
                 <VehicleTable
                   vehicles={visibleVehicles}

@@ -17,11 +17,16 @@ import {
   Info,
   ChevronDown,
   AlertCircle,
-  XCircle
+  XCircle,
+  Tag,
+  Wrench,
+  Check
 } from 'lucide-react';
-import { DiffResult, Vehicle, PdfStageInfo, PdfProcessingError } from '../types/stock';
-import { pdfService } from '../services/pdfService';
+import { DiffResult, Vehicle, PdfStageInfo, PdfProcessingError, DiscardedRecordDetail } from '../types/stock';
+import { pdfService, registerCustomBrand, registerCustomBrands, getAllControlledBrands } from '../services/pdfService';
 import { stockService } from '../services/stockService';
+import { firestoreService } from '../services/firestoreService';
+import { auth } from '../services/firebase';
 import { formatCurrency, formatKm } from '../utils/formatters';
 
 interface UpdateStockViewProps {
@@ -55,8 +60,126 @@ export const UpdateStockView: React.FC<UpdateStockViewProps> = ({
   const [appliedSuccess, setAppliedSuccess] = useState(false);
   const [missingActions, setMissingActions] = useState<Record<string, 'mantener' | 'vendido' | 'reservado' | 'eliminar'>>({});
   const [showDiscarded, setShowDiscarded] = useState(false);
+  const [showBrandManager, setShowBrandManager] = useState(false);
+  const [customBrandsList, setCustomBrandsList] = useState<string[]>([]);
+  const [newBrandInput, setNewBrandInput] = useState('');
+  const [resolvingRecord, setResolvingRecord] = useState<DiscardedRecordDetail | null>(null);
+  const [resolveForm, setResolveForm] = useState({
+    patente: '',
+    marca: '',
+    modelo: '',
+    version: '',
+    anio: new Date().getFullYear(),
+    km: 0,
+    precio: '',
+  });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Cargar configuración de marcas personalizadas desde Firestore al montar
+  React.useEffect(() => {
+    const user = auth?.currentUser;
+    if (user) {
+      firestoreService.getParserConfig(user.uid).then((cfg) => {
+        if (cfg?.customBrands && cfg.customBrands.length > 0) {
+          registerCustomBrands(cfg.customBrands);
+          setCustomBrandsList(cfg.customBrands);
+        }
+      }).catch((err) => {
+        console.warn('[PDF-PARSER] Error al cargar configuración de marcas desde Firestore:', err);
+      });
+    }
+  }, []);
+
+  const handleRegisterCustomBrand = async (brandName: string) => {
+    const clean = brandName.trim().toUpperCase();
+    if (!clean || clean.length < 2) return;
+    registerCustomBrand(clean);
+    setCustomBrandsList((prev) => Array.from(new Set([...prev, clean])));
+    setNewBrandInput('');
+    const user = auth?.currentUser;
+    if (user) {
+      await firestoreService.saveCustomBrand(user.uid, clean).catch((err) => {
+        console.error('[PDF-PARSER] Error al guardar marca en Firestore:', err);
+      });
+    }
+  };
+
+  const handleStartResolveRecord = (record: DiscardedRecordDetail) => {
+    setResolvingRecord(record);
+    const estYear = record.anioDetectado ? parseInt(record.anioDetectado, 10) : new Date().getFullYear();
+    const estKm = record.kmDetectado ? parseInt(record.kmDetectado.replace(/\D/g, ''), 10) : 0;
+    setResolveForm({
+      patente: record.patenteDetectada || '',
+      marca: '',
+      modelo: record.descripcionDetectada || '',
+      version: '',
+      anio: isNaN(estYear) ? new Date().getFullYear() : estYear,
+      km: isNaN(estKm) ? 0 : estKm,
+      precio: record.precioDetectado || '',
+    });
+  };
+
+  const handleSaveResolvedRecord = () => {
+    if (!resolvingRecord || !diffResult) return;
+    const cleanPat = resolveForm.patente.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!cleanPat) return;
+
+    const parsedPrice = resolveForm.precio ? parseInt(resolveForm.precio.replace(/\D/g, ''), 10) : null;
+    const nowIso = new Date().toISOString();
+    const resolvedVehicle: Vehicle = {
+      id: `AUT-RES-${Date.now()}`,
+      patente: cleanPat,
+      marca: resolveForm.marca.trim().toUpperCase() || 'OTRA',
+      modelo: resolveForm.modelo.trim() || 'Desconocido',
+      version: resolveForm.version.trim(),
+      anio: resolveForm.anio || new Date().getFullYear(),
+      kilometraje: resolveForm.km || 0,
+      precio: parsedPrice && parsedPrice > 0 ? parsedPrice : null,
+      precioEstado: parsedPrice && parsedPrice > 0 ? 'DEFINIDO' : 'A_CONFIRMAR',
+      moneda: 'ARS',
+      combustible: 'Nafta',
+      caja: 'Manual',
+      traccion: '4x2',
+      color: 'A confirmar',
+      estado: 'Disponible',
+      observaciones: `Incorporado manualmente desde fila descartada (motivo: ${resolvingRecord.reason}).`,
+      fotoPrincipal: '',
+      fotos: [],
+      ubicacion: 'Neuquén',
+      fechaIncorporacion: nowIso,
+      fechaActualizacion: nowIso,
+      origenDato: 'autonet_pdf',
+      source: 'pdf_manual_resolution',
+      isHistorical: false,
+    };
+
+    stockService.addOrUpdateVehicle(resolvedVehicle);
+
+    setDiffResult((prev) => {
+      if (!prev) return null;
+      const updatedDiscarded = prev.diagnostics.discardedDetails.filter((d) => d !== resolvingRecord);
+      return {
+        ...prev,
+        nuevos: prev.nuevos + 1,
+        diagnostics: {
+          ...prev.diagnostics,
+          discardedRecords: Math.max(0, prev.diagnostics.discardedRecords - 1),
+          discardedDetails: updatedDiscarded,
+        },
+        items: [
+          {
+            tipo: 'nuevo',
+            patente: cleanPat,
+            vehiculoNuevo: resolvedVehicle,
+          },
+          ...prev.items,
+        ],
+      };
+    });
+
+    setResolvingRecord(null);
+  };
 
   // Carga de archivo real PDF
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -176,6 +299,15 @@ export const UpdateStockView: React.FC<UpdateStockViewProps> = ({
   const handleConfirmUpdate = () => {
     if (!diffResult) return;
     stockService.applyBatchUpdate(diffResult);
+    
+    // Persistir filas descartadas en Firestore para trazabilidad forense
+    const user = auth?.currentUser;
+    if (user && diffResult.diagnostics.discardedDetails && diffResult.diagnostics.discardedDetails.length > 0) {
+      firestoreService.saveDiscardedRecords(user.uid, diffResult.diagnostics.discardedDetails).catch((err) => {
+        console.warn('[PDF-PARSER] Error guardando registros descartados en Firestore:', err);
+      });
+    }
+
     setAppliedSuccess(true);
     setTimeout(() => {
       onUpdateCompleted(diffResult.archivoNombre);
@@ -566,20 +698,94 @@ export const UpdateStockView: React.FC<UpdateStockViewProps> = ({
                     </div>
                   )}
 
-                  <button
-                    onClick={() => setShowDiscarded(!showDiscarded)}
-                    className="text-xs text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <span>
-                      {showDiscarded 
-                        ? 'Ocultar detalle de filas descartadas' 
-                        : `Ver detalle forense de las ${diffResult.diagnostics.discardedRecords} filas descartadas`}
-                    </span>
-                    <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showDiscarded ? 'rotate-180' : ''}`} />
-                  </button>
+                  <div className="flex items-center gap-3 flex-wrap pt-1">
+                    <button
+                      onClick={() => setShowDiscarded(!showDiscarded)}
+                      className="text-xs text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <span>
+                        {showDiscarded 
+                          ? 'Ocultar detalle de filas descartadas' 
+                          : `Ver detalle forense de las ${diffResult.diagnostics.discardedRecords} filas descartadas`}
+                      </span>
+                      <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showDiscarded ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setShowBrandManager(!showBrandManager)}
+                      className="text-xs text-amber-900 hover:text-amber-950 font-semibold flex items-center gap-1.5 cursor-pointer bg-amber-100 hover:bg-amber-200/80 px-2.5 py-1 rounded-md border border-amber-300 transition-colors"
+                    >
+                      <Tag className="w-3.5 h-3.5 text-amber-700" />
+                      <span>Marcas reconocidas ({getAllControlledBrands().length})</span>
+                      <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showBrandManager ? 'rotate-180' : ''}`} />
+                    </button>
+                  </div>
+
+                  {showBrandManager && (
+                    <div className="mt-2.5 p-3.5 bg-white rounded-xl border border-amber-300 shadow-xs space-y-3">
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                          <Tag className="w-3.5 h-3.5 text-amber-600" />
+                          Configuración de Marcas para el Parser PDF
+                        </h4>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          Agregue marcas que no vengan por defecto (ej. RAM, CHERY, BAIC, DS). Se sincronizan automáticamente en la nube.
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <input
+                          type="text"
+                          value={newBrandInput}
+                          onChange={(e) => setNewBrandInput(e.target.value.toUpperCase())}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleRegisterCustomBrand(newBrandInput);
+                            }
+                          }}
+                          placeholder="NUEVA MARCA (ej. RAM)"
+                          className="px-3 py-1.5 text-xs font-mono font-bold uppercase rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleRegisterCustomBrand(newBrandInput)}
+                          disabled={!newBrandInput.trim()}
+                          className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white font-bold text-xs flex items-center gap-1 transition-colors"
+                        >
+                          <PlusCircle className="w-3.5 h-3.5" />
+                          <span>Agregar Marca</span>
+                        </button>
+                        {selectedFile && (
+                          <button
+                            type="button"
+                            onClick={() => processPdfFile(selectedFile)}
+                            className="px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 font-bold text-xs flex items-center gap-1 transition-colors"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5" />
+                            <span>Re-analizar con marcas nuevas</span>
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {customBrandsList.length > 0 ? (
+                          customBrandsList.map((brand) => (
+                            <span key={brand} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-amber-50 text-amber-900 border border-amber-300 font-mono text-xs font-bold">
+                              <Check className="w-3 h-3 text-amber-600" />
+                              {brand}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="text-[11px] text-slate-400 italic">No hay marcas personalizadas agregadas. Se usan las 30+ marcas de fábrica.</span>
+                        )}
+                      </div>
+                    </div>
+                  )}
 
                   {showDiscarded && (
-                    <div className="mt-2.5 p-3 bg-amber-50/60 rounded-lg border border-amber-200/70 max-h-64 overflow-y-auto space-y-2.5 text-xs">
+                    <div className="mt-2.5 p-3 bg-amber-50/60 rounded-lg border border-amber-200/70 max-h-72 overflow-y-auto space-y-2.5 text-xs">
                       {diffResult.diagnostics.discardedDetails.map((item, dIdx) => (
                         <div key={dIdx} className="bg-white p-3 rounded-lg border border-amber-200/80 shadow-2xs space-y-1.5">
                           <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -591,11 +797,22 @@ export const UpdateStockView: React.FC<UpdateStockViewProps> = ({
                               ) : null}
                               {item.reason}
                             </span>
-                            {item.patenteDetectada && (
-                              <span className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded font-mono font-bold text-[11px]">
-                                Patente: {item.patenteDetectada}
-                              </span>
-                            )}
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {item.patenteDetectada && (
+                                <span className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded font-mono font-bold text-[11px]">
+                                  Patente: {item.patenteDetectada}
+                                </span>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => handleStartResolveRecord(item)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white font-bold text-[11px] transition-colors shadow-2xs cursor-pointer"
+                                title="Incorporar este vehículo manualmente al stock"
+                              >
+                                <Wrench className="w-3 h-3" />
+                                <span>Incorporar unidad</span>
+                              </button>
+                            </div>
                           </div>
 
                           {(item.descripcionDetectada || item.anioDetectado || item.kmDetectado || item.precioDetectado) && (
@@ -903,11 +1120,18 @@ export const UpdateStockView: React.FC<UpdateStockViewProps> = ({
                       <td className="py-3 px-4">
                         {item.tipo === 'nuevo' && item.vehiculoNuevo && (
                           <div className="space-y-0.5">
-                            <span className="font-bold text-emerald-700">
-                              {formatCurrency(item.vehiculoNuevo.precio || 0)}
-                            </span>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-bold text-emerald-700">
+                                {formatCurrency(item.vehiculoNuevo.precio)}
+                              </span>
+                              {item.vehiculoNuevo.precioEstado === 'A_CONFIRMAR' && (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                                  A confirmar
+                                </span>
+                              )}
+                            </div>
                             <div className="text-[11px] text-slate-500">
-                              Año {item.vehiculoNuevo.anio} • {formatKm(item.vehiculoNuevo.kilometraje || 0)}
+                              Año {item.vehiculoNuevo.anio} • {formatKm(item.vehiculoNuevo.kilometraje)}
                             </div>
                           </div>
                         )}
@@ -916,16 +1140,18 @@ export const UpdateStockView: React.FC<UpdateStockViewProps> = ({
                           <div className="space-y-1">
                             {item.cambios.map((c, i) => {
                               const isPrice = c.campo === 'precio';
-                              const diffNum = isPrice ? c.valorNuevo - c.valorAnterior : null;
+                              const diffNum = isPrice && typeof c.valorNuevo === 'number' && typeof c.valorAnterior === 'number' 
+                                ? c.valorNuevo - c.valorAnterior 
+                                : null;
                               return (
                                 <div key={i} className="flex items-center gap-1.5 flex-wrap">
                                   <span className="font-semibold text-slate-600">{c.etiqueta}:</span>
                                   <span className="line-through text-slate-400">
-                                    {isPrice ? formatCurrency(c.valorAnterior) : c.valorAnterior}
+                                    {isPrice ? (typeof c.valorAnterior === 'number' ? formatCurrency(c.valorAnterior) : String(c.valorAnterior)) : c.valorAnterior}
                                   </span>
                                   <ArrowRight className="w-3 h-3 text-slate-400" />
                                   <span className="font-bold text-blue-700">
-                                    {isPrice ? formatCurrency(c.valorNuevo) : c.valorNuevo}
+                                    {isPrice ? (typeof c.valorNuevo === 'number' ? formatCurrency(c.valorNuevo) : String(c.valorNuevo)) : c.valorNuevo}
                                   </span>
                                   {diffNum !== null && (
                                     <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${
@@ -995,6 +1221,117 @@ export const UpdateStockView: React.FC<UpdateStockViewProps> = ({
           <p className="text-sm text-emerald-800 mt-1">
             Los cambios fueron consolidados en la base de datos y registrados en el historial de actualizaciones. Redirigiendo a la pantalla de stock...
           </p>
+        </div>
+      )}
+
+      {/* Modal de Incorporación Manual para fila descartada */}
+      {resolvingRecord && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2 text-slate-900">
+                <Wrench className="w-5 h-5 text-blue-600" />
+                <h3 className="text-base font-bold">Incorporar Unidad Manualmente</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setResolvingRecord(null)}
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-500">
+              Complete o confirme los datos de la fila no reconocida por el analizador para sumarla al inventario activo.
+            </p>
+
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <div className="col-span-1">
+                <label className="font-bold text-slate-700 block mb-1">Patente *</label>
+                <input
+                  type="text"
+                  value={resolveForm.patente}
+                  onChange={(e) => setResolveForm({ ...resolveForm, patente: e.target.value.toUpperCase() })}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 font-mono font-bold uppercase focus:ring-2 focus:ring-blue-500"
+                  placeholder="AA123BB o AB123CD"
+                />
+              </div>
+
+              <div className="col-span-1">
+                <label className="font-bold text-slate-700 block mb-1">Marca *</label>
+                <input
+                  type="text"
+                  value={resolveForm.marca}
+                  onChange={(e) => setResolveForm({ ...resolveForm, marca: e.target.value.toUpperCase() })}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 font-bold uppercase focus:ring-2 focus:ring-blue-500"
+                  placeholder="VOLKSWAGEN, TOYOTA, etc."
+                />
+              </div>
+
+              <div className="col-span-2">
+                <label className="font-bold text-slate-700 block mb-1">Modelo / Versión *</label>
+                <input
+                  type="text"
+                  value={resolveForm.modelo}
+                  onChange={(e) => setResolveForm({ ...resolveForm, modelo: e.target.value })}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 font-medium focus:ring-2 focus:ring-blue-500"
+                  placeholder="AMAROK HIGHLINE 4X4"
+                />
+              </div>
+
+              <div className="col-span-1">
+                <label className="font-bold text-slate-700 block mb-1">Año</label>
+                <input
+                  type="number"
+                  value={resolveForm.anio}
+                  onChange={(e) => setResolveForm({ ...resolveForm, anio: parseInt(e.target.value, 10) || 0 })}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 font-medium focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div className="col-span-1">
+                <label className="font-bold text-slate-700 block mb-1">Kilometraje</label>
+                <input
+                  type="number"
+                  value={resolveForm.km}
+                  onChange={(e) => setResolveForm({ ...resolveForm, km: parseInt(e.target.value, 10) || 0 })}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 font-medium focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div className="col-span-2">
+                <label className="font-bold text-slate-700 block mb-1">
+                  Precio (ARS) <span className="font-normal text-slate-400">— dejar vacío para 'A confirmar'</span>
+                </label>
+                <input
+                  type="text"
+                  value={resolveForm.precio}
+                  onChange={(e) => setResolveForm({ ...resolveForm, precio: e.target.value })}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 font-mono font-bold focus:ring-2 focus:ring-blue-500"
+                  placeholder="Ej: 28500000 o dejar vacío"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setResolvingRecord(null)}
+                className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 font-bold text-xs hover:bg-slate-50 transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveResolvedRecord}
+                disabled={!resolveForm.patente.trim() || !resolveForm.modelo.trim()}
+                className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold text-xs transition-colors shadow-xs cursor-pointer"
+              >
+                Incorporar al Stock
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

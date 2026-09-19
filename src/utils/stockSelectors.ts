@@ -1,5 +1,6 @@
 import { CommercialFilter, StockFilters, Vehicle, VehicleStatus } from '../types/stock';
 import { normalizeMileage } from './formatters';
+import { normalizePatent } from './vehicleIdentity';
 
 /**
  * SELECTORES CENTRALIZADOS DE STOCK — AUTONET
@@ -223,9 +224,11 @@ export const applyStockFilters = (
     if (filters.searchQuery && filters.searchQuery.trim()) {
       const q = filters.searchQuery.toLowerCase().trim();
       const searchTarget = `${v.patente} ${v.marca} ${v.modelo} ${v.version} ${v.anio} ${v.color}`.toLowerCase();
-      const cleanPatente = v.patente.replace(/\s+/g, '').toLowerCase();
-      const cleanQuery = q.replace(/\s+/g, '');
-      if (!searchTarget.includes(q) && !cleanPatente.includes(cleanQuery)) {
+      const cleanPatente = normalizePatent(v.patente);
+      const cleanQuery = normalizePatent(q);
+      const isPatentMatch = Boolean(cleanQuery && (cleanPatente.includes(cleanQuery) || cleanQuery.includes(cleanPatente)));
+      const isGeneralMatch = searchTarget.includes(q);
+      if (!isPatentMatch && !isGeneralMatch) {
         return false;
       }
     }
@@ -246,8 +249,12 @@ export const applyStockFilters = (
     if (maxKm !== null && (km === null || km > maxKm)) return false;
 
     // Rango de precio
-    if (filters.precioMin !== '' && v.precio < filters.precioMin) return false;
-    if (filters.precioMax !== '' && v.precio > filters.precioMax) return false;
+    if (filters.precioMin !== '') {
+      if (v.precio === null || v.precio === undefined || v.precio < filters.precioMin) return false;
+    }
+    if (filters.precioMax !== '') {
+      if (v.precio === null || v.precio === undefined || v.precio > filters.precioMax) return false;
+    }
 
     // Combustible
     if (filters.combustible && v.combustible !== filters.combustible) return false;

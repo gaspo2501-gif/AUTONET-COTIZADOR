@@ -4,6 +4,7 @@ import {
   getDocs, 
   getDoc,
   setDoc, 
+  deleteDoc,
   writeBatch, 
   onSnapshot, 
   serverTimestamp,
@@ -11,7 +12,7 @@ import {
   Unsubscribe
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from './firebase';
-import { Vehicle, UpdateHistoryRecord, VehicleStatus } from '../types/stock';
+import { Vehicle, UpdateHistoryRecord, VehicleStatus, DiscardedRecordDetail, ParserConfig } from '../types/stock';
 import { sanitizeForFirestore, normalizePatenteDocId } from '../utils/firestoreSanitizer';
 
 export type SyncStatus = 'syncing' | 'synced' | 'offline' | 'error';
@@ -291,6 +292,111 @@ class FirestoreService {
       totalVehicles,
       cloudCreatedAt: serverTimestamp(),
     }, { merge: true });
+  }
+
+  // ==========================================
+  // CONFIGURACIÓN DEL PARSER (MARCAS PERSONALIZADAS)
+  // users/{uid}/config/parser
+  // ==========================================
+
+  public async getParserConfig(userId: string): Promise<ParserConfig> {
+    if (!db) return { customBrands: [] };
+    try {
+      const configRef = doc(db, 'users', userId, 'config', 'parser');
+      const snap = await getDoc(configRef);
+      if (snap.exists()) {
+        const data = snap.data();
+        return {
+          customBrands: Array.isArray(data.customBrands) ? data.customBrands : [],
+        };
+      }
+    } catch (err) {
+      console.warn('[FIRESTORE] Error obteniendo config del parser:', err);
+    }
+    return { customBrands: [] };
+  }
+
+  public async saveCustomBrand(userId: string, brandName: string): Promise<string[]> {
+    if (!db) return [brandName];
+    const cleanBrand = brandName.trim().toUpperCase();
+    if (!cleanBrand) return [];
+
+    try {
+      const configRef = doc(db, 'users', userId, 'config', 'parser');
+      const snap = await getDoc(configRef);
+      const currentBrands: string[] = snap.exists() && Array.isArray(snap.data()?.customBrands)
+        ? snap.data().customBrands
+        : [];
+
+      if (!currentBrands.includes(cleanBrand)) {
+        const updatedBrands = [...currentBrands, cleanBrand];
+        await setDoc(configRef, {
+          customBrands: updatedBrands,
+          updatedAt: serverTimestamp(),
+        }, { merge: true });
+        return updatedBrands;
+      }
+      return currentBrands;
+    } catch (err) {
+      console.error('[FIRESTORE] Error guardando marca personalizada:', err);
+      throw err;
+    }
+  }
+
+  // ==========================================
+  // COLECCIÓN TEMPORAL DE DESCARTES
+  // users/{uid}/discarded_records
+  // ==========================================
+
+  public async saveDiscardedRecords(userId: string, records: DiscardedRecordDetail[]): Promise<void> {
+    if (!db || records.length === 0) return;
+
+    try {
+      // Guardar en batches de hasta 400
+      const batchSize = 400;
+      for (let i = 0; i < records.length; i += batchSize) {
+        const batch = writeBatch(db);
+        const chunk = records.slice(i, i + batchSize);
+        chunk.forEach((rec, idx) => {
+          const docId = rec.id || (rec.patenteDetectada 
+            ? `DISC_${normalizePatenteDocId(rec.patenteDetectada)}` 
+            : `DISC_${Date.now()}_${i + idx}`);
+          const recRef = doc(db, 'users', userId, 'discarded_records', docId);
+          batch.set(recRef, sanitizeForFirestore({
+            ...rec,
+            id: docId,
+            source: 'pdf_parser',
+            timestamp: new Date().toISOString(),
+            cloudCreatedAt: serverTimestamp(),
+          }));
+        });
+        await batch.commit();
+      }
+    } catch (err) {
+      console.warn('[FIRESTORE] Error guardando descartes temporales:', err);
+    }
+  }
+
+  public async getDiscardedRecords(userId: string): Promise<DiscardedRecordDetail[]> {
+    if (!db) return [];
+    try {
+      const colRef = collection(db, 'users', userId, 'discarded_records');
+      const snap = await getDocs(colRef);
+      return snap.docs.map(d => ({ ...d.data(), id: d.id } as DiscardedRecordDetail));
+    } catch (err) {
+      console.warn('[FIRESTORE] Error leyendo registros descartados:', err);
+      return [];
+    }
+  }
+
+  public async removeDiscardedRecord(userId: string, recordId: string): Promise<void> {
+    if (!db) return;
+    try {
+      const docRef = doc(db, 'users', userId, 'discarded_records', recordId);
+      await deleteDoc(docRef);
+    } catch (err) {
+      console.warn('[FIRESTORE] Error eliminando registro descartado:', err);
+    }
   }
 }
 
