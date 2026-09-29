@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import { defineConfig, Plugin } from 'vite';
+import { VitePWA } from 'vite-plugin-pwa';
 
 function templateManagementPlugin(): Plugin {
   return {
@@ -107,7 +108,59 @@ function templateManagementPlugin(): Plugin {
 export default defineConfig(() => {
   return {
     base: '/AUTONET-COTIZADOR/',
-    plugins: [react(), tailwindcss(), templateManagementPlugin()],
+    plugins: [
+      react(),
+      tailwindcss(),
+      templateManagementPlugin(),
+      VitePWA({
+        registerType: 'autoUpdate',
+        includeAssets: ['icon.svg', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png', 'pwa-maskable-512x512.png'],
+        manifest: {
+          id: '/AUTONET-COTIZADOR/',
+          name: 'Autonet Cotizador',
+          short_name: 'Autonet',
+          description: 'Gestión comercial de stock de usados Autonet',
+          theme_color: '#dc2626',
+          background_color: '#f8fafc',
+          display: 'standalone',
+          orientation: 'portrait',
+          start_url: '/AUTONET-COTIZADOR/',
+          scope: '/AUTONET-COTIZADOR/',
+          icons: [
+            {
+              src: 'pwa-192x192.png',
+              sizes: '192x192',
+              type: 'image/png',
+              purpose: 'any',
+            },
+            {
+              src: 'pwa-512x512.png',
+              sizes: '512x512',
+              type: 'image/png',
+              purpose: 'any',
+            },
+            {
+              src: 'pwa-maskable-512x512.png',
+              sizes: '512x512',
+              type: 'image/png',
+              purpose: 'maskable',
+            },
+          ],
+        },
+        workbox: {
+          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+          maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+          cleanupOutdatedCaches: true,
+          clientsClaim: true,
+          skipWaiting: true,
+          navigateFallback: '/AUTONET-COTIZADOR/index.html',
+          navigateFallbackDenylist: [/^\/autonet-api/, /^\/api/],
+        },
+        devOptions: {
+          enabled: true,
+        },
+      }),
+    ],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

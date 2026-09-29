@@ -22,6 +22,7 @@ import {
 
 import { Navbar, NavTab } from './components/Navbar';
 import { StockFiltersBar } from './components/StockFiltersBar';
+import { MobileStockHeader } from './components/MobileStockHeader';
 import { VehicleCard } from './components/VehicleCard';
 import { MobileCompactVehicleCard } from './components/MobileCompactVehicleCard';
 import { VehicleTable } from './components/VehicleTable';
@@ -358,8 +359,21 @@ export default function App() {
           {currentTab === 'stock' && (
             <div className="space-y-4 animate-in fade-in duration-150">
               
+              {/* VISTA MÓVIL: Buscador sticky, resumen compacto y drawer de filtros (<= 768px: md:hidden) */}
+              <MobileStockHeader
+                filters={filters}
+                onFilterChange={setFilters}
+                onResetFilters={resetFilters}
+                availableVehicles={vehicles}
+                totalResults={visibleVehicles.length}
+                stockCounts={stockCounts}
+                sortBy={sortBy}
+                onSortChange={setSortBy}
+              />
+
+              {/* VISTA DESKTOP (> 768px: inalterada) */}
               {/* Banner Superior Autonet con Jerarquía Clara */}
-              <div className="bg-white rounded-xl p-4 sm:p-5 border border-slate-200/90 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="hidden md:flex bg-white rounded-xl p-4 sm:p-5 border border-slate-200/90 shadow-xs flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                   <div className="flex items-center gap-2.5">
                     <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight font-sans">
@@ -435,17 +449,19 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Barra de Filtros y Buscador */}
-              <StockFiltersBar
-                filters={filters}
-                onFilterChange={setFilters}
-                onResetFilters={resetFilters}
-                availableVehicles={vehicles}
-                totalResults={visibleVehicles.length}
-              />
+              {/* Barra de Filtros y Buscador Desktop */}
+              <div className="hidden md:block">
+                <StockFiltersBar
+                  filters={filters}
+                  onFilterChange={setFilters}
+                  onResetFilters={resetFilters}
+                  availableVehicles={vehicles}
+                  totalResults={visibleVehicles.length}
+                />
+              </div>
 
-              {/* Barra de Herramientas: Resultados, Selector de vista y Orden */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white px-4 py-3 rounded-xl border border-slate-200/90 shadow-xs">
+              {/* Barra de Herramientas Desktop: Resultados, Selector de vista y Orden */}
+              <div className="hidden md:flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white px-4 py-3 rounded-xl border border-slate-200/90 shadow-xs">
                 <div className="text-xs sm:text-sm font-semibold text-slate-700">
                   Mostrando <strong className="text-blue-700 font-bold">{visibleVehicles.length}</strong> resultados
                   {commercialLabel && filters.estadoComercial !== 'activo' && (

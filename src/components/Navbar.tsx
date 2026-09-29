@@ -14,11 +14,13 @@ import {
   RefreshCw,
   AlertCircle,
   LogOut,
-  LogIn
+  LogIn,
+  Download
 } from 'lucide-react';
 import { ADVISOR_INFO } from '../constants/advisor';
 import { SyncStatus } from '../services/firestoreService';
 import { User } from 'firebase/auth';
+import { usePWAInstall } from '../hooks/usePWAInstall';
 
 export type NavTab = 'stock' | 'ventas' | 'actualizar' | 'historial' | 'cotizaciones' | 'presupuestos' | 'configuracion';
 
@@ -47,6 +49,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const [menuOpen, setMenuOpen] = React.useState(false);
   const menuRef = React.useRef<HTMLDivElement>(null);
+  const { isInstallable, install } = usePWAInstall();
 
   const handleTabClick = (tab: NavTab) => {
     onSelectTab(tab);
@@ -333,6 +336,27 @@ export const Navbar: React.FC<NavbarProps> = ({
                       Respaldo
                     </span>
                   </button>
+
+                  {/* 8. Instalar App PWA (Discreto en menú hamburguesa, sólo si compatible y no instalada) */}
+                  {isInstallable && (
+                    <button
+                      id="nav-tab-install-pwa"
+                      type="button"
+                      onClick={async () => {
+                        setMenuOpen(false);
+                        await install();
+                      }}
+                      className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-semibold text-slate-800 bg-red-50/50 hover:bg-red-50 hover:text-red-700 transition-colors cursor-pointer border border-red-100"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <Download className="w-4 h-4 text-red-600" />
+                        <span>Instalar app</span>
+                      </div>
+                      <span className="text-[10px] font-extrabold px-2 py-0.5 rounded bg-red-600 text-white tracking-wider">
+                        PWA
+                      </span>
+                    </button>
+                  )}
                 </div>
 
                 {/* Sección Sesión y Sincronización */}
