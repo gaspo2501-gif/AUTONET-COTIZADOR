@@ -9,6 +9,7 @@ import {
   onSnapshot, 
   serverTimestamp,
   runTransaction,
+  deleteField,
   Unsubscribe
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from './firebase';
@@ -181,12 +182,44 @@ class FirestoreService {
   public async saveVehicle(userId: string, vehicle: Vehicle): Promise<void> {
     if (!db) throw new Error('Firestore no disponible');
     const docRef = this.getVehicleDoc(userId, vehicle.patente);
-    const sanitized = sanitizeForFirestore({
+    const sanitized: Record<string, any> = sanitizeForFirestore({
       ...vehicle,
       cloudUpdatedAt: serverTimestamp(),
       schemaVersion: 1,
     });
+    if (!vehicle.fechaFacturacion) {
+      sanitized.fechaFacturacion = deleteField();
+    }
     await setDoc(docRef, sanitized, { merge: true });
+  }
+
+  /**
+   * Actualiza o elimina la fecha de facturación de una operación en Firestore.
+   */
+  public async updateVehicleFacturacion(
+    userId: string,
+    patente: string,
+    fechaFacturacion?: string | null
+  ): Promise<void> {
+    if (!db) throw new Error('Firestore no disponible');
+    const docRef = this.getVehicleDoc(userId, patente);
+    const cleanDate = fechaFacturacion && typeof fechaFacturacion === 'string' && fechaFacturacion.trim()
+      ? fechaFacturacion.trim().slice(0, 10)
+      : null;
+
+    if (cleanDate) {
+      await setDoc(docRef, sanitizeForFirestore({
+        fechaFacturacion: cleanDate,
+        cloudUpdatedAt: serverTimestamp(),
+        fechaActualizacion: new Date().toISOString(),
+      }), { merge: true });
+    } else {
+      await setDoc(docRef, {
+        fechaFacturacion: deleteField(),
+        cloudUpdatedAt: serverTimestamp(),
+        fechaActualizacion: new Date().toISOString(),
+      }, { merge: true });
+    }
   }
 
   /**

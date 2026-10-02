@@ -35,6 +35,7 @@ import { UpdateHistoryView } from './components/UpdateHistoryView';
 import { FutureModulesView } from './components/FutureModulesView';
 import { MarkAsSoldModal } from './components/MarkAsSoldModal';
 import { MySalesView } from './components/MySalesView';
+import { CommissionsView } from './components/CommissionsView';
 import { LoginModal } from './components/LoginModal';
 import { MigrationModal } from './components/MigrationModal';
 import { authService } from './services/authService';
@@ -147,6 +148,18 @@ export default function App() {
     soldAt?: string;
     soldPrice?: number;
     observaciones?: string;
+    precioRealVenta?: number;
+    ivaVenta?: 21 | 10.5;
+    comisionBaseCalculada?: number;
+    esCritico?: boolean;
+    usaCredinet?: boolean;
+    tieneTomaUsado?: boolean;
+    valorTomaUsado?: number;
+    ivaTomaUsado?: 21 | 10.5;
+    comisionTomaCalculada?: number;
+    marcaModeloTomaUsado?: string;
+    patenteTomaUsado?: string;
+    fechaFacturacion?: string;
   }) => {
     if (!soldModalVehicle) return;
     const targetIdentifier = normalizePatent(soldModalVehicle.patente) || soldModalVehicle.id;
@@ -598,6 +611,16 @@ export default function App() {
               onSelectVehicle={setSelectedVehicle}
               onOpenMarkAsSold={handleOpenMarkAsSold}
               onNavigateToStock={() => setCurrentTab('stock')}
+            />
+          )}
+
+          {/* VISTA COMISIONES */}
+          {currentTab === 'comisiones' && (
+            <CommissionsView
+              vehicles={vehicles}
+              currentUser={currentUser}
+              onOpenMarkAsSold={handleOpenMarkAsSold}
+              onNavigateToSales={() => setCurrentTab('ventas')}
             />
           )}
 

@@ -34,6 +34,20 @@ export interface Vehicle {
   saleOwner?: SaleOwner; // 'self' = vendida por mí, 'other' = vendida por otro vendedor, null = sin clasificar
   soldAt?: string; // Fecha de venta (ISO string YYYY-MM-DD o ISO timestamp)
   soldPrice?: number; // Precio al momento de la venta
+  fechaFacturacion?: string; // Fecha real en que Administración informa que la unidad fue facturada (YYYY-MM-DD). Determina el mes del volumen.
+
+  // Foto histórica de comisiones (inalterable ante cambios posteriores en Stock)
+  precioRealVenta?: number;
+  ivaVenta?: 21 | 10.5;
+  comisionBaseCalculada?: number;
+  esCritico?: boolean;
+  usaCredinet?: boolean;
+  tieneTomaUsado?: boolean;
+  valorTomaUsado?: number;
+  ivaTomaUsado?: 21 | 10.5;
+  comisionTomaCalculada?: number;
+  marcaModeloTomaUsado?: string;
+  patenteTomaUsado?: string;
   
   // Control de stock activo vs histórico
   isHistorical?: boolean; // true si ya no figura en el stock activo del último PDF

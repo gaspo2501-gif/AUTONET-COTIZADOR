@@ -406,6 +406,18 @@ class StockService {
       soldAt?: string;
       soldPrice?: number;
       observaciones?: string;
+      precioRealVenta?: number;
+      ivaVenta?: 21 | 10.5;
+      comisionBaseCalculada?: number;
+      esCritico?: boolean;
+      usaCredinet?: boolean;
+      tieneTomaUsado?: boolean;
+      valorTomaUsado?: number;
+      ivaTomaUsado?: 21 | 10.5;
+      comisionTomaCalculada?: number;
+      marcaModeloTomaUsado?: string;
+      patenteTomaUsado?: string;
+      fechaFacturacion?: string;
     }
   ): Vehicle | null {
     const stock = this.getAllVehicles();
@@ -414,18 +426,38 @@ class StockService {
 
     const current = stock[index];
     const today = new Date().toISOString().split('T')[0];
+    const cleanFechaFacturacion = options.fechaFacturacion && typeof options.fechaFacturacion === 'string' && options.fechaFacturacion.trim()
+      ? options.fechaFacturacion.trim().slice(0, 10)
+      : (current.fechaFacturacion || undefined);
+
     const updated: Vehicle = {
       ...current,
       estado: 'Vendido',
       estadoModificadoManualmente: true,
       saleOwner: options.saleOwner,
       soldAt: options.soldAt || current.soldAt || today,
-      soldPrice: options.soldPrice ?? current.soldPrice ?? current.precio,
+      soldPrice: options.soldPrice ?? options.precioRealVenta ?? current.soldPrice ?? current.precio,
       observaciones: options.observaciones
         ? `${current.observaciones ? current.observaciones + '\n' : ''}[Venta ${options.saleOwner === 'self' ? 'Propia' : 'Otro'}]: ${options.observaciones}`
         : current.observaciones,
+      // Datos de comisiones (foto histórica inalterable)
+      precioRealVenta: options.precioRealVenta ?? current.precioRealVenta ?? (options.soldPrice ?? current.precio ?? undefined),
+      ivaVenta: options.ivaVenta ?? current.ivaVenta ?? 21,
+      comisionBaseCalculada: options.comisionBaseCalculada ?? current.comisionBaseCalculada,
+      esCritico: options.esCritico !== undefined ? options.esCritico : current.esCritico,
+      usaCredinet: options.usaCredinet !== undefined ? options.usaCredinet : current.usaCredinet,
+      tieneTomaUsado: options.tieneTomaUsado !== undefined ? options.tieneTomaUsado : current.tieneTomaUsado,
+      valorTomaUsado: options.valorTomaUsado ?? current.valorTomaUsado,
+      ivaTomaUsado: options.ivaTomaUsado ?? current.ivaTomaUsado,
+      comisionTomaCalculada: options.comisionTomaCalculada ?? current.comisionTomaCalculada,
+      marcaModeloTomaUsado: options.marcaModeloTomaUsado ?? current.marcaModeloTomaUsado,
+      patenteTomaUsado: options.patenteTomaUsado ?? current.patenteTomaUsado,
+      fechaFacturacion: cleanFechaFacturacion,
       fechaActualizacion: new Date().toISOString(),
     };
+    if (!cleanFechaFacturacion) {
+      delete updated.fechaFacturacion;
+    }
 
     if (this.isCloudActive && this.currentUserId) {
       firestoreService.saveVehicle(this.currentUserId, updated).catch((err) => {
@@ -448,9 +480,22 @@ class StockService {
   public updateSaleInfo(
     idOrPatente: string,
     options: {
-      saleOwner: 'self' | 'other' | null;
+      saleOwner?: 'self' | 'other' | null;
       soldAt?: string;
       soldPrice?: number;
+      precioRealVenta?: number;
+      ivaVenta?: 21 | 10.5;
+      comisionBaseCalculada?: number;
+      esCritico?: boolean;
+      usaCredinet?: boolean;
+      tieneTomaUsado?: boolean;
+      valorTomaUsado?: number;
+      ivaTomaUsado?: 21 | 10.5;
+      comisionTomaCalculada?: number;
+      marcaModeloTomaUsado?: string;
+      patenteTomaUsado?: string;
+      fechaFacturacion?: string | null;
+      observaciones?: string;
     }
   ): Vehicle | null {
     const stock = this.getAllVehicles();
@@ -458,17 +503,78 @@ class StockService {
     if (index === -1) return null;
 
     const current = stock[index];
+    let resolvedFacturacion = current.fechaFacturacion;
+    if (options.fechaFacturacion !== undefined) {
+      resolvedFacturacion = options.fechaFacturacion && typeof options.fechaFacturacion === 'string' && options.fechaFacturacion.trim()
+        ? options.fechaFacturacion.trim().slice(0, 10)
+        : undefined;
+    }
+
     const updated: Vehicle = {
       ...current,
-      saleOwner: options.saleOwner,
+      saleOwner: options.saleOwner !== undefined ? options.saleOwner : current.saleOwner,
       soldAt: options.soldAt ?? current.soldAt,
-      soldPrice: options.soldPrice ?? current.soldPrice,
+      soldPrice: options.soldPrice ?? options.precioRealVenta ?? current.soldPrice,
+      precioRealVenta: options.precioRealVenta !== undefined ? options.precioRealVenta : current.precioRealVenta,
+      ivaVenta: options.ivaVenta !== undefined ? options.ivaVenta : current.ivaVenta,
+      comisionBaseCalculada: options.comisionBaseCalculada !== undefined ? options.comisionBaseCalculada : current.comisionBaseCalculada,
+      esCritico: options.esCritico !== undefined ? options.esCritico : current.esCritico,
+      usaCredinet: options.usaCredinet !== undefined ? options.usaCredinet : current.usaCredinet,
+      tieneTomaUsado: options.tieneTomaUsado !== undefined ? options.tieneTomaUsado : current.tieneTomaUsado,
+      valorTomaUsado: options.valorTomaUsado !== undefined ? options.valorTomaUsado : current.valorTomaUsado,
+      ivaTomaUsado: options.ivaTomaUsado !== undefined ? options.ivaTomaUsado : current.ivaTomaUsado,
+      comisionTomaCalculada: options.comisionTomaCalculada !== undefined ? options.comisionTomaCalculada : current.comisionTomaCalculada,
+      marcaModeloTomaUsado: options.marcaModeloTomaUsado !== undefined ? options.marcaModeloTomaUsado : current.marcaModeloTomaUsado,
+      patenteTomaUsado: options.patenteTomaUsado !== undefined ? options.patenteTomaUsado : current.patenteTomaUsado,
+      fechaFacturacion: resolvedFacturacion,
+      observaciones: options.observaciones !== undefined ? options.observaciones : current.observaciones,
       fechaActualizacion: new Date().toISOString(),
     };
+    if (!resolvedFacturacion) {
+      delete updated.fechaFacturacion;
+    }
 
     if (this.isCloudActive && this.currentUserId) {
       firestoreService.saveVehicle(this.currentUserId, updated).catch((err) => {
         console.error('Error al actualizar venta en Firestore:', err);
+      });
+      stock[index] = updated;
+      this.memoryStock = stock;
+      this.notify();
+    } else {
+      stock[index] = updated;
+      this.saveLocalStockOnly(stock);
+    }
+
+    return updated;
+  }
+
+  /**
+   * Actualiza o elimina la fecha de facturación administrativa de una operación.
+   * Si fechaFacturacion es null, vacía o undefined, se elimina la fecha (queda Pendiente de Facturación).
+   */
+  public setVehicleFacturacion(idOrPatente: string, fechaFacturacion?: string | null): Vehicle | null {
+    const stock = this.getAllVehicles();
+    const index = this.findVehicleIndex(idOrPatente);
+    if (index === -1) return null;
+
+    const current = stock[index];
+    const cleanDate = fechaFacturacion && typeof fechaFacturacion === 'string' && fechaFacturacion.trim()
+      ? fechaFacturacion.trim().slice(0, 10)
+      : undefined;
+
+    const updated: Vehicle = {
+      ...current,
+      fechaFacturacion: cleanDate,
+      fechaActualizacion: new Date().toISOString(),
+    };
+    if (!cleanDate) {
+      delete updated.fechaFacturacion;
+    }
+
+    if (this.isCloudActive && this.currentUserId) {
+      firestoreService.updateVehicleFacturacion(this.currentUserId, current.patente, cleanDate).catch((err) => {
+        console.error('Error al guardar fechaFacturacion en Firestore:', err);
       });
       stock[index] = updated;
       this.memoryStock = stock;

@@ -15,14 +15,15 @@ import {
   AlertCircle,
   LogOut,
   LogIn,
-  Download
+  Download,
+  BadgePercent
 } from 'lucide-react';
 import { ADVISOR_INFO } from '../constants/advisor';
 import { SyncStatus } from '../services/firestoreService';
 import { User } from 'firebase/auth';
 import { usePWAInstall } from '../hooks/usePWAInstall';
 
-export type NavTab = 'stock' | 'ventas' | 'actualizar' | 'historial' | 'cotizaciones' | 'presupuestos' | 'configuracion';
+export type NavTab = 'stock' | 'ventas' | 'comisiones' | 'actualizar' | 'historial' | 'cotizaciones' | 'presupuestos' | 'configuracion';
 
 interface NavbarProps {
   currentTab: NavTab;
@@ -243,7 +244,27 @@ export const Navbar: React.FC<NavbarProps> = ({
                     )}
                   </button>
 
-                  {/* 3. Actualizar stock */}
+                  {/* 3. Comisiones */}
+                  <button
+                    id="nav-tab-comisiones"
+                    type="button"
+                    onClick={() => handleTabClick('comisiones')}
+                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
+                      currentTab === 'comisiones'
+                        ? 'bg-red-50 text-red-700 font-bold border-l-4 border-red-600'
+                        : 'text-slate-700 hover:bg-slate-100/80 hover:text-slate-900'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <BadgePercent className={`w-4 h-4 ${currentTab === 'comisiones' ? 'text-red-600' : 'text-amber-600'}`} />
+                      <span>Comisiones</span>
+                    </div>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
+                      Mes
+                    </span>
+                  </button>
+
+                  {/* 4. Actualizar stock */}
                   <button
                     id="nav-tab-actualizar"
                     type="button"
