@@ -24,6 +24,8 @@ interface StockViewProps {
   onQuote: (v: Vehicle) => void;
   onStatusChange: (v: Vehicle | string, s: VehicleStatus) => void;
   onOpenMarkAsSold: (v: Vehicle) => void;
+  comparePatents?: string[];
+  onToggleCompare?: (v: Vehicle) => void;
 }
 
 const COMMERCIAL_TABS: { value: CommercialFilter; label: string; countKey: keyof StockCounts; dot: string }[] = [
@@ -89,6 +91,8 @@ export const StockView: React.FC<StockViewProps> = ({
   onQuote,
   onStatusChange,
   onOpenMarkAsSold,
+  comparePatents = [],
+  onToggleCompare,
 }) => {
   const [sortBy, setSortBy] = usePersistentState<StockSortKey>('autonet_ui_sort_v2', 'disponibles_primero', isSortKey);
   const [viewMode, setViewMode] = usePersistentState<'cards' | 'table'>('autonet_ui_view_v2', 'cards', (v): v is 'cards' | 'table' => v === 'cards' || v === 'table');
@@ -377,6 +381,8 @@ export const StockView: React.FC<StockViewProps> = ({
                     onQuote={onQuote}
                     onOpenMarkAsSold={onOpenMarkAsSold}
                     query={query}
+                    isComparing={comparePatents.includes(normalizePatent(v.patente))}
+                    onToggleCompare={onToggleCompare}
                   />
                 ))}
               </div>

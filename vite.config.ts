@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
-import { defineConfig, Plugin } from 'vite';
+import { defineConfig, loadEnv, Plugin } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
 function templateManagementPlugin(): Plugin {
@@ -105,9 +105,14 @@ function templateManagementPlugin(): Plugin {
   };
 }
 
-export default defineConfig(() => {
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '');
+  // Ruta de publicación en GitHub Pages: el workflow la toma del nombre del repositorio,
+  // así la misma base de código funciona en el repo oficial y en uno de pruebas.
+  const rawBase = env.BASE_PATH || process.env.BASE_PATH || '/AUTONET-COTIZADOR/';
+  const base = `/${rawBase.replace(/^\/+|\/+$/g, '')}/`.replace('//', '/');
   return {
-    base: '/AUTONET-COTIZADOR/',
+    base,
     plugins: [
       react(),
       tailwindcss(),
@@ -116,7 +121,7 @@ export default defineConfig(() => {
         registerType: 'autoUpdate',
         includeAssets: ['icon.svg', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png', 'pwa-maskable-512x512.png'],
         manifest: {
-          id: '/AUTONET-COTIZADOR/',
+          id: base,
           name: 'Autonet Cotizador',
           short_name: 'Autonet',
           description: 'Gestión comercial de stock de usados Autonet',
@@ -124,8 +129,8 @@ export default defineConfig(() => {
           background_color: '#f8fafc',
           display: 'standalone',
           orientation: 'portrait',
-          start_url: '/AUTONET-COTIZADOR/',
-          scope: '/AUTONET-COTIZADOR/',
+          start_url: base,
+          scope: base,
           icons: [
             {
               src: 'pwa-192x192.png',
@@ -153,7 +158,7 @@ export default defineConfig(() => {
           cleanupOutdatedCaches: true,
           clientsClaim: true,
           skipWaiting: true,
-          navigateFallback: '/AUTONET-COTIZADOR/index.html',
+          navigateFallback: `${base}index.html`,
           navigateFallbackDenylist: [/^\/autonet-api/, /^\/api/],
         },
         devOptions: {
@@ -177,7 +182,8 @@ export default defineConfig(() => {
           changeOrigin: true,
           rewrite: (p) => p.replace(/^\/autonet-api/, ''),
           headers: {
-            'api-key': '9a169d80-e446-4b45-b1d3-6fd0003d810c',
+            // Clave del portal DeConcesionarias (solo modo desarrollo). Configurala en .env.local
+            'api-key': env.AUTONET_API_KEY || '',
             'Origin': 'https://autonet.com.ar',
             'Referer': 'https://autonet.com.ar/',
           },

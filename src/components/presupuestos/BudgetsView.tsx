@@ -1,6 +1,7 @@
 import React from 'react';
-import { FileText, Search, Plus, Copy, Check, Eye, Calculator, Trash2, MessageCircle, Clock, User, Phone, AlertTriangle, X } from 'lucide-react';
-import { CommercialBudget, quoteService } from '../../services/quoteService';
+import { FileText, Search, Plus, Copy, Check, Eye, Calculator, Trash2, MessageCircle, Clock, User, Phone, AlertTriangle, X, BellRing, TrendingDown, Sparkles } from 'lucide-react';
+import { CommercialBudget, quoteService, BudgetFollowUpStatus } from '../../services/quoteService';
+import { getBudgetAlerts, todayISO } from '../../utils/budgetAlerts';
 import { Vehicle } from '../../types/stock';
 import { formatCurrency } from '../../utils/formatters';
 import { normalizeText } from '../../utils/search';
@@ -14,7 +15,76 @@ interface BudgetsViewProps {
   onQuoteVehicle: (v: Vehicle) => void;
   onNewQuote: () => void;
   onToast: (text: string, type?: 'success' | 'info' | 'warn') => void;
+  onOpenVehicle?: (v: Vehicle) => void;
 }
+
+const STATUS_META: Record<BudgetFollowUpStatus, { label: string; cls: string }> = {
+  enviado: { label: 'Enviado', cls: 'bg-slate-100 text-slate-700 ring-slate-200' },
+  respondio: { label: 'Respondió', cls: 'bg-action-50 text-action-700 ring-action-200' },
+  perdido: { label: 'Perdido', cls: 'bg-rose-50 text-rose-700 ring-rose-200' },
+  vendido: { label: 'Vendido', cls: 'bg-emerald-50 text-emerald-700 ring-emerald-200' },
+};
+
+const addDays = (n: number) => {
+  const d = new Date();
+  d.setDate(d.getDate() + n);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+const fmtDay = (iso: string) => {
+  const today = todayISO();
+  if (iso === today) return 'hoy';
+  if (iso === addDays(1)) return 'mañana';
+  return new Date(`${iso}T12:00:00`).toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric', month: 'short' });
+};
+
+/** Estado + recordatorio del presupuesto, sin cargar clientes aparte. */
+const FollowUp: React.FC<{ b: CommercialBudget }> = ({ b }) => {
+  const f = b.seguimiento || { estado: 'enviado' as BudgetFollowUpStatus };
+  const set = (patch: Partial<typeof f>) => quoteService.updateBudgetFollowUp(b.id, { ...f, ...patch });
+  const closed = f.estado === 'perdido' || f.estado === 'vendido';
+  const overdue = f.recordarEl && f.recordarEl < todayISO() && !closed;
+  return (
+    <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+      {(Object.keys(STATUS_META) as BudgetFollowUpStatus[]).map((k) => (
+        <button
+          key={k}
+          type="button"
+          onClick={() => set({ estado: k, recordarEl: k === 'perdido' || k === 'vendido' ? undefined : f.recordarEl })}
+          className={`text-[11px] font-bold px-2 py-0.5 rounded-full ring-1 ring-inset transition ${f.estado === k ? STATUS_META[k].cls : 'ring-transparent text-slate-400 hover:text-slate-700'}`}
+        >
+          {STATUS_META[k].label}
+        </button>
+      ))}
+      {!closed && (
+        <span className="inline-flex items-center gap-1 ml-1">
+          <BellRing className={`w-3.5 h-3.5 ${overdue ? 'text-brand-600' : 'text-slate-400'}`} />
+          {f.recordarEl ? (
+            <button type="button" onClick={() => set({ recordarEl: undefined })} className={`text-[11.5px] font-bold ${overdue ? 'text-brand-700' : 'text-slate-700'} hover:line-through`} title="Quitar recordatorio">
+              Volver a escribir {fmtDay(f.recordarEl)}
+            </button>
+          ) : (
+            <>
+              <span className="text-[11.5px] text-slate-500">Recordarme:</span>
+              {[1, 3, 7].map((n) => (
+                <button key={n} type="button" onClick={() => set({ recordarEl: addDays(n) })} className="text-[11px] font-bold px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-600 hover:bg-action-50 hover:text-action-700">
+                  {n === 1 ? 'mañana' : `${n} días`}
+                </button>
+              ))}
+              <input
+                type="date"
+                aria-label="Elegir fecha de recordatorio"
+                min={todayISO()}
+                onChange={(e) => e.target.value && set({ recordarEl: e.target.value })}
+                className="text-[11px] text-slate-500 bg-transparent border border-slate-200 rounded-md px-1 py-0.5 w-[118px]"
+              />
+            </>
+          )}
+        </span>
+      )}
+    </div>
+  );
+};
 
 type Scope = 'todos' | 'vigentes' | 'vencidos';
 
@@ -45,7 +115,7 @@ const Kpi: React.FC<{ label: string; value: React.ReactNode; hint?: string; tone
   </div>
 );
 
-export const BudgetsView: React.FC<BudgetsViewProps> = ({ vehicles, onOpenBudget, onQuoteVehicle, onNewQuote, onToast }) => {
+export const BudgetsView: React.FC<BudgetsViewProps> = ({ vehicles, onOpenBudget, onQuoteVehicle, onNewQuote, onToast, onOpenVehicle }) => {
   const [budgets, setBudgets] = React.useState<CommercialBudget[]>(() => quoteService.getBudgetHistory());
   const [q, setQ] = React.useState('');
   const [scope, setScope] = React.useState<Scope>('todos');
@@ -104,6 +174,8 @@ export const BudgetsView: React.FC<BudgetsViewProps> = ({ vehicles, onOpenBudget
     return [...map.entries()];
   }, [filtered]);
 
+  const alerts = React.useMemo(() => getBudgetAlerts(budgets, vehicles), [budgets, vehicles]);
+
   const findVehicle = (b: CommercialBudget) => vehicles.find((v) => isSameVehicle(v, b.vehiculo.patente));
 
   const copyWhatsApp = async (b: CommercialBudget) => {
@@ -138,6 +210,84 @@ export const BudgetsView: React.FC<BudgetsViewProps> = ({ vehicles, onOpenBudget
         <Kpi label="Clientes" value={stats.clientes} hint="Con nombre cargado" />
         <Kpi label="Total guardados" value={stats.total} hint="En este dispositivo" />
       </div>
+
+      {/* Para hoy + oportunidades */}
+      {alerts.length > 0 && (
+        <section className="autonet-card overflow-hidden border-brand-200">
+          <header className="px-4 sm:px-5 py-3 bg-brand-50/70 border-b border-brand-100 flex items-center gap-2">
+            <BellRing className="w-4 h-4 text-brand-600" />
+            <h2 className="text-[13.5px] font-extrabold text-slate-900">Para hacer hoy</h2>
+            <span className="text-[11px] font-black text-white bg-brand-600 rounded-full px-1.5 py-0.5 tabular">{alerts.length}</span>
+          </header>
+          <ul className="divide-y divide-slate-100">
+            {alerts.map((a, i) => {
+              const b = a.budget;
+              const who = b.datosCliente?.nombre || 'cliente sin nombre';
+              const unit = `${b.vehiculo.marca} ${b.vehiculo.modelo}`;
+              const msg =
+                a.kind === 'priceDrop'
+                  ? `¡Hola${b.datosCliente?.nombre ? ' ' + b.datosCliente.nombre.split(' ')[0] : ''}! Te cuento que el *${unit} ${b.vehiculo.anio}* que estuviste viendo bajó de precio: ahora está *${formatCurrency(a.vehicle.precio)}* (antes ${formatCurrency(b.precioVehiculo)}). ¿Lo querés venir a ver?`
+                  : a.kind === 'sold'
+                  ? `¡Hola${b.datosCliente?.nombre ? ' ' + b.datosCliente.nombre.split(' ')[0] : ''}! El *${unit}* que habíamos presupuestado ya se vendió, pero tengo otras opciones parecidas que te pueden interesar. ¿Te paso?`
+                  : `¡Hola${b.datosCliente?.nombre ? ' ' + b.datosCliente.nombre.split(' ')[0] : ''}! ¿Pudiste pensar lo del *${unit} ${b.vehiculo.anio}*? Si querés lo vemos juntos o te ayudo con la toma de tu usado.`;
+              const wa = quoteService.buildWhatsAppLink(b.datosCliente?.telefono, msg) || `https://wa.me/?text=${encodeURIComponent(msg)}`;
+              return (
+                <li key={`${a.kind}-${b.id}-${i}`} className="px-4 sm:px-5 py-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+                  <div className="flex items-start gap-3 flex-1 min-w-0">
+                    <span
+                      className={`mt-0.5 w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+                        a.kind === 'priceDrop' ? 'bg-emerald-50 text-emerald-600' : a.kind === 'sold' ? 'bg-amber-50 text-amber-600' : 'bg-brand-50 text-brand-600'
+                      }`}
+                    >
+                      {a.kind === 'priceDrop' ? <TrendingDown className="w-4 h-4" /> : a.kind === 'sold' ? <Sparkles className="w-4 h-4" /> : <BellRing className="w-4 h-4" />}
+                    </span>
+                    <div className="min-w-0">
+                      <div className="text-[13.5px] font-bold text-slate-900">
+                        {a.kind === 'priceDrop' && <>Bajó {formatCurrency(a.diff)} el {unit} de {who}</>}
+                        {a.kind === 'sold' && <>Se vendió el {unit} que le presupuestaste a {who}</>}
+                        {a.kind === 'due' && <>Volver a escribirle a {who}{a.overdueDays > 0 ? ` (hace ${a.overdueDays} día${a.overdueDays > 1 ? 's' : ''})` : ''}</>}
+                      </div>
+                      <div className="text-[12px] text-slate-500 truncate">
+                        {b.numeroPresupuesto} · {unit} {b.vehiculo.version} · presupuestado {formatCurrency(b.precioVehiculo)}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 sm:shrink-0 pl-11 sm:pl-0">
+                    <a href={wa} target="_blank" rel="noopener noreferrer" className="btn btn-sm bg-emerald-600 hover:bg-emerald-700 text-white">
+                      <MessageCircle className="w-3.5 h-3.5" /> Escribirle
+                    </a>
+                    {a.kind === 'sold' && onOpenVehicle && (
+                      <button type="button" onClick={() => onOpenVehicle(a.vehicle)} className="btn btn-sm btn-secondary" title="Ver unidades parecidas para ofrecer">
+                        Ver parecidas
+                      </button>
+                    )}
+                    {a.kind === 'due' && (
+                      <button
+                        type="button"
+                        onClick={() => quoteService.updateBudgetFollowUp(b.id, { ...(b.seguimiento || { estado: 'enviado' }), recordarEl: addDays(3) })}
+                        className="btn btn-sm btn-ghost"
+                        title="Posponer 3 días"
+                      >
+                        +3 días
+                      </button>
+                    )}
+                    {a.kind !== 'due' && (
+                      <button
+                        type="button"
+                        onClick={() => quoteService.updateBudgetFollowUp(b.id, { ...(b.seguimiento || { estado: 'enviado' }), estado: 'respondio' })}
+                        className="btn btn-sm btn-ghost"
+                        title="Ya le escribí: marcar como respondió"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
 
       {/* Búsqueda + segmentado */}
       <div className="flex flex-col sm:flex-row gap-2">
@@ -238,6 +388,7 @@ export const BudgetsView: React.FC<BudgetsViewProps> = ({ vehicles, onOpenBudget
                               : `El precio cambió: hoy ${formatCurrency(current!.precio, current!.moneda)}.`}
                           </div>
                         )}
+                        <FollowUp b={b} />
                       </div>
 
                       <div className="flex items-center justify-between lg:justify-end gap-4">

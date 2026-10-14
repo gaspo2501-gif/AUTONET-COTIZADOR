@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { todayISO } from '../utils/dates';
 import { 
   Calculator, 
   FileText, 
@@ -74,7 +75,7 @@ export const FutureModulesView: React.FC<FutureModulesViewProps> = ({
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `autonet_stock_backup_${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `autonet_stock_backup_${todayISO()}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };

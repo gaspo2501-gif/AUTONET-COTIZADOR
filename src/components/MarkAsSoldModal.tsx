@@ -16,6 +16,7 @@ import {
   CarFront
 } from 'lucide-react';
 import { Vehicle } from '../types/stock';
+import { todayISO } from '../utils/budgetAlerts';
 import { CommissionIvaRate } from '../types/commissions';
 import { formatCurrency } from '../utils/formatters';
 import { calculateBaseCommission, calculateTradeInCommission } from '../services/commissionService';
@@ -42,6 +43,8 @@ interface MarkAsSoldModalProps {
     fechaFacturacion?: string;
   }) => void;
   onRevert?: (vehicleOrPatent: Vehicle | string) => void;
+  /** Valores sugeridos (p. ej. tomados del boleto recién generado). */
+  prefill?: Partial<Vehicle>;
 }
 
 export const MarkAsSoldModal: React.FC<MarkAsSoldModalProps> = ({
@@ -49,35 +52,39 @@ export const MarkAsSoldModal: React.FC<MarkAsSoldModalProps> = ({
   onClose,
   onConfirm,
   onRevert,
+  prefill,
 }) => {
   const isAlreadySold = vehicle.estado === 'Vendido';
-  const todayStr = new Date().toISOString().split('T')[0];
+  // Origen de los valores iniciales: lo guardado en la unidad + lo sugerido por el boleto
+  const src: Vehicle = prefill ? { ...vehicle, ...prefill } : vehicle;
+  // Fecha local (toISOString usa UTC y después de las 21 h en Argentina daba el día siguiente)
+  const todayStr = todayISO();
 
   const [saleOwner, setSaleOwner] = useState<'self' | 'other'>(
-    vehicle.saleOwner === 'other' ? 'other' : 'self'
+    src.saleOwner === 'other' ? 'other' : 'self'
   );
   const [soldAt, setSoldAt] = useState<string>(
-    vehicle.soldAt ? vehicle.soldAt.slice(0, 10) : todayStr
+    src.soldAt ? src.soldAt.slice(0, 10) : todayStr
   );
   const [fechaFacturacion, setFechaFacturacion] = useState<string>(
-    vehicle.fechaFacturacion ? vehicle.fechaFacturacion.slice(0, 10) : ''
+    src.fechaFacturacion ? src.fechaFacturacion.slice(0, 10) : ''
   );
   
   // Precio real de venta
-  const initialPrice = vehicle.precioRealVenta ?? vehicle.soldPrice ?? vehicle.precio ?? 0;
+  const initialPrice = src.precioRealVenta ?? src.soldPrice ?? src.precio ?? 0;
   const [precioRealVenta, setPrecioRealVenta] = useState<number>(initialPrice);
-  const [ivaVenta, setIvaVenta] = useState<CommissionIvaRate>(vehicle.ivaVenta ?? 21);
+  const [ivaVenta, setIvaVenta] = useState<CommissionIvaRate>(src.ivaVenta ?? 21);
 
   // Conceptos comerciales
-  const [esCritico, setEsCritico] = useState<boolean>(vehicle.esCritico ?? false);
-  const [usaCredinet, setUsaCredinet] = useState<boolean>(vehicle.usaCredinet ?? false);
-  const [tieneTomaUsado, setTieneTomaUsado] = useState<boolean>(vehicle.tieneTomaUsado ?? false);
+  const [esCritico, setEsCritico] = useState<boolean>(src.esCritico ?? false);
+  const [usaCredinet, setUsaCredinet] = useState<boolean>(src.usaCredinet ?? false);
+  const [tieneTomaUsado, setTieneTomaUsado] = useState<boolean>(src.tieneTomaUsado ?? false);
 
   // Toma de usado
-  const [valorTomaUsado, setValorTomaUsado] = useState<number>(vehicle.valorTomaUsado ?? 0);
-  const [ivaTomaUsado, setIvaTomaUsado] = useState<CommissionIvaRate>(vehicle.ivaTomaUsado ?? 21);
-  const [marcaModeloTomaUsado, setMarcaModeloTomaUsado] = useState<string>(vehicle.marcaModeloTomaUsado ?? '');
-  const [patenteTomaUsado, setPatenteTomaUsado] = useState<string>(vehicle.patenteTomaUsado ?? '');
+  const [valorTomaUsado, setValorTomaUsado] = useState<number>(src.valorTomaUsado ?? 0);
+  const [ivaTomaUsado, setIvaTomaUsado] = useState<CommissionIvaRate>(src.ivaTomaUsado ?? 21);
+  const [marcaModeloTomaUsado, setMarcaModeloTomaUsado] = useState<string>(src.marcaModeloTomaUsado ?? '');
+  const [patenteTomaUsado, setPatenteTomaUsado] = useState<string>(src.patenteTomaUsado ?? '');
 
   const [observaciones, setObservaciones] = useState<string>('');
   const [confirmRevert, setConfirmRevert] = useState<boolean>(false);
@@ -170,6 +177,11 @@ export const MarkAsSoldModal: React.FC<MarkAsSoldModalProps> = ({
 
         {/* Contenido del Formulario */}
         <form onSubmit={handleSubmit} className="p-6 overflow-y-auto space-y-4">
+          {prefill && (
+            <div className="px-3.5 py-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-[12px] text-emerald-900 font-medium">
+              Completé precio, toma de usado y financiación con los datos del boleto. Revisá y confirmá.
+            </div>
+          )}
           
           {/* Selector de Canal / Asignación de Venta */}
           <div>

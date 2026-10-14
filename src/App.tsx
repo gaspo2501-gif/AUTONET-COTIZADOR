@@ -19,6 +19,13 @@ import { BudgetModal } from './components/BudgetModal';
 import { QuoteDocument } from './components/QuoteDocument';
 import { MarkAsSoldModal } from './components/MarkAsSoldModal';
 import { LoginModal } from './components/LoginModal';
+import { CompareBar } from './components/consultas/CompareBar';
+import { CompareModal } from './components/consultas/CompareModal';
+import { BoletoModal } from './components/boleto/BoletoModal';
+import { BoletoRecord } from './services/boletoHistoryService';
+import { appEvents } from './services/appEvents';
+import { usePersistentState } from './hooks/usePersistentState';
+import { getBudgetAlerts } from './utils/budgetAlerts';
 
 // Secciones pesadas: se cargan recién cuando se abren (la app inicia más rápido, sobre todo en el celular)
 const MySalesView = lazy(() => import('./components/MySalesView').then((m) => ({ default: m.MySalesView })));
@@ -27,6 +34,9 @@ const UpdateStockView = lazy(() => import('./components/UpdateStockView').then((
 const UpdateHistoryView = lazy(() => import('./components/UpdateHistoryView').then((m) => ({ default: m.UpdateHistoryView })));
 const FutureModulesView = lazy(() => import('./components/FutureModulesView').then((m) => ({ default: m.FutureModulesView })));
 const BudgetsView = lazy(() => import('./components/presupuestos/BudgetsView').then((m) => ({ default: m.BudgetsView })));
+const BoletosView = lazy(() => import('./components/boletos/BoletosView').then((m) => ({ default: m.BoletosView })));
+const StoriesView = lazy(() => import('./components/publicidad/StoriesView').then((m) => ({ default: m.StoriesView })));
+const MessageTemplatesEditor = lazy(() => import('./components/consultas/MessageTemplatesEditor').then((m) => ({ default: m.MessageTemplatesEditor })));
 const MigrationModal = lazy(() => import('./components/MigrationModal').then((m) => ({ default: m.MigrationModal })));
 
 const DEFAULT_FILTERS: StockFilters = {
@@ -50,7 +60,7 @@ const DEFAULT_FILTERS: StockFilters = {
 };
 
 // ---- Navegación por URL (#stock, #ventas…) para que funcione el botón "atrás" del celular ----
-const VALID_TABS: NavTab[] = ['stock', 'ventas', 'comisiones', 'presupuestos', 'actualizar', 'historial', 'configuracion'];
+const VALID_TABS: NavTab[] = ['stock', 'ventas', 'comisiones', 'presupuestos', 'boletos', 'publicidad', 'actualizar', 'historial', 'configuracion'];
 const tabFromHash = (): NavTab => {
   const h = (typeof window !== 'undefined' ? window.location.hash : '').replace('#', '');
   if (h === 'cotizaciones') return 'presupuestos';
@@ -78,6 +88,10 @@ export default function App() {
   const [activeBudget, setActiveBudget] = useState<CommercialBudget | null>(null);
   const [soldModalVehicle, setSoldModalVehicle] = useState<Vehicle | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [salePrefill, setSalePrefill] = useState<Partial<Vehicle> | undefined>(undefined);
+  const [boletoReopen, setBoletoReopen] = useState<{ vehicle: Vehicle; data: BoletoRecord['data'] } | null>(null);
+  const [comparePatents, setComparePatents] = usePersistentState<string[]>('autonet_compare_v1', [], (v): v is string[] => Array.isArray(v));
+  const [compareOpen, setCompareOpen] = useState(false);
   const { toasts, show: showToast, dismiss } = useToasts();
 
   // Firebase Auth y sincronización
@@ -115,6 +129,18 @@ export default function App() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+
+  // Desde un boleto recién generado: abrir "Registrar venta" ya completo
+  useEffect(
+    () =>
+      appEvents.onRegisterSale(({ patente, prefill }) => {
+        const v = stockService.getAllVehicles().find((x) => isSameVehicle(x, patente));
+        if (!v) return;
+        setSalePrefill(prefill);
+        setSoldModalVehicle(v);
+      }),
+    []
+  );
 
   // ---------- Suscripciones ----------
   useEffect(() => {
@@ -235,11 +261,45 @@ export default function App() {
     }
   }, [filters, vehicles]);
 
-  const [budgetCount, setBudgetCount] = useState(() => quoteService.getBudgetHistory().filter((b) => new Date(b.fechaVencimiento).getTime() > Date.now()).length);
-  useEffect(
-    () => quoteService.subscribeBudgets((list) => setBudgetCount(list.filter((b) => new Date(b.fechaVencimiento).getTime() > Date.now()).length)),
-    []
+  const [budgets, setBudgets] = useState(() => quoteService.getBudgetHistory());
+  useEffect(() => quoteService.subscribeBudgets(setBudgets), []);
+  const budgetAlertCount = useMemo(() => getBudgetAlerts(budgets, vehicles).length, [budgets, vehicles]);
+
+  // Comparación de unidades (hasta 3)
+  const compareVehicles = useMemo(
+    () => comparePatents.map((p) => vehicles.find((v) => normalizePatent(v.patente) === p)).filter((v): v is Vehicle => !!v),
+    [comparePatents, vehicles]
   );
+  const toggleCompare = useCallback(
+    (v: Vehicle) => {
+      const p = normalizePatent(v.patente);
+      setComparePatents((prev) => {
+        if (prev.includes(p)) return prev.filter((x) => x !== p);
+        if (prev.length >= 3) {
+          showToast('Podés comparar hasta 3 unidades.', 'warn');
+          return prev;
+        }
+        return [...prev, p];
+      });
+    },
+    [setComparePatents, showToast]
+  );
+
+  const reopenBoleto = (rec: BoletoRecord) => {
+    const v =
+      vehicles.find((x) => isSameVehicle(x, rec.vehiculo.patente)) ||
+      ({
+        id: rec.vehiculo.patente,
+        patente: rec.vehiculo.patente,
+        marca: rec.vehiculo.marca,
+        modelo: rec.vehiculo.modelo,
+        version: rec.vehiculo.version,
+        anio: rec.vehiculo.anio,
+        empresa: rec.vehiculo.empresa,
+        estado: 'Vendido',
+      } as Vehicle);
+    setBoletoReopen({ vehicle: v, data: rec.data });
+  };
 
   return (
     <>
@@ -266,7 +326,7 @@ export default function App() {
         <AppShell
           currentTab={currentTab}
           onSelectTab={navigate}
-          badges={{ stock: stockCounts.disponible, ventas: stockCounts.misVentas, presupuestos: budgetCount }}
+          badges={{ stock: stockCounts.disponible, ventas: stockCounts.misVentas, presupuestos: budgetAlertCount }}
           syncStatus={syncStatus}
           user={currentUser}
           onLoginClick={() => setShowLoginModal(true)}
@@ -289,6 +349,8 @@ export default function App() {
                 onQuote={handleOpenQuote}
                 onStatusChange={handleStatusChange}
                 onOpenMarkAsSold={handleOpenMarkAsSold}
+                comparePatents={comparePatents}
+                onToggleCompare={toggleCompare}
               />
             )}
 
@@ -308,8 +370,13 @@ export default function App() {
                   onQuoteVehicle={handleOpenQuote}
                   onNewQuote={() => setPaletteOpen(true)}
                   onToast={showToast}
+                  onOpenVehicle={setSelectedVehicle}
                 />
               )}
+
+              {currentTab === 'boletos' && <BoletosView onReopen={reopenBoleto} onToast={showToast} />}
+
+              {currentTab === 'publicidad' && <StoriesView vehicles={vehicles} onToast={showToast} />}
 
               {currentTab === 'actualizar' && (
                 <UpdateStockView
@@ -324,6 +391,11 @@ export default function App() {
 
               {currentTab === 'historial' && <UpdateHistoryView />}
 
+              {currentTab === 'configuracion' && (
+                <div className="mb-6">
+                  <MessageTemplatesEditor sampleVehicle={vehicles.find((v) => v.estado === 'Disponible')} onToast={showToast} />
+                </div>
+              )}
               {currentTab === 'configuracion' && (
                 <FutureModulesView
                   type="configuracion"
@@ -340,6 +412,25 @@ export default function App() {
         </AppShell>
 
         <Toaster toasts={toasts} onDismiss={dismiss} />
+
+        {currentTab === 'stock' && !selectedVehicle && (
+          <CompareBar vehicles={compareVehicles} onOpen={() => setCompareOpen(true)} onClear={() => setComparePatents([])} />
+        )}
+        {compareOpen && compareVehicles.length > 0 && (
+          <CompareModal
+            vehicles={compareVehicles}
+            onClose={() => setCompareOpen(false)}
+            onRemove={toggleCompare}
+            onClear={() => {
+              setComparePatents([]);
+              setCompareOpen(false);
+            }}
+          />
+        )}
+
+        {boletoReopen && (
+          <BoletoModal isOpen vehicle={boletoReopen.vehicle} initialData={boletoReopen.data} onClose={() => setBoletoReopen(null)} />
+        )}
 
         {paletteOpen && (
           <CommandPalette
@@ -359,6 +450,11 @@ export default function App() {
             onOpenQuote={handleOpenQuote}
             onOpenMarkAsSold={handleOpenMarkAsSold}
             onUpdateVehicleTableValue={handleUpdateVehicleTableValue}
+            allVehicles={vehicles}
+            onOpenVehicle={setSelectedVehicle}
+            isComparing={comparePatents.includes(normalizePatent(selectedVehicle.patente))}
+            compareFull={comparePatents.length >= 3}
+            onToggleCompare={toggleCompare}
           />
         )}
 
@@ -385,7 +481,17 @@ export default function App() {
         )}
 
         {soldModalVehicle && (
-          <MarkAsSoldModal vehicle={soldModalVehicle} onClose={() => setSoldModalVehicle(null)} onConfirm={handleConfirmSale} onRevert={handleRevertSale} />
+          <MarkAsSoldModal
+            key={`${soldModalVehicle.patente}-${salePrefill ? 'boleto' : 'manual'}`}
+            vehicle={soldModalVehicle}
+            prefill={salePrefill}
+            onClose={() => {
+              setSoldModalVehicle(null);
+              setSalePrefill(undefined);
+            }}
+            onConfirm={handleConfirmSale}
+            onRevert={handleRevertSale}
+          />
         )}
 
         {showLoginModal && (

@@ -1,4 +1,3 @@
-import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { 
   DiffResult, 
   FieldChange, 
@@ -18,15 +17,26 @@ import { autonetService } from './autonetService';
 import { normalizeMileage, parseArgentineInteger, parseMileage, parsePrice } from '../utils/formatters';
 import { getSituacionOperativaInfo } from '../utils/autonetHelpers';
 
-import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-
-// Configure pdfjs worker if in browser
-if (typeof window !== 'undefined') {
-  try {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
-  } catch (e) {
-    console.warn('pdfjs worker initialization error:', e);
+/**
+ * PDF.js (~1 MB) se descarga recién cuando se importa un PDF de stock,
+ * así la app abre más rápido (sobre todo en el celular).
+ */
+let pdfjsPromise: Promise<any> | null = null;
+async function loadPdfJs(): Promise<any> {
+  if (!pdfjsPromise) {
+    pdfjsPromise = Promise.all([
+      import('pdfjs-dist/legacy/build/pdf.mjs'),
+      import('pdfjs-dist/build/pdf.worker.min.mjs?url'),
+    ]).then(([lib, worker]) => {
+      try {
+        lib.GlobalWorkerOptions.workerSrc = worker.default;
+      } catch (e) {
+        console.warn('pdfjs worker initialization error:', e);
+      }
+      return lib;
+    });
   }
+  return pdfjsPromise;
 }
 
 export { normalizeMileage, parseArgentineInteger, parseMileage, parsePrice };
@@ -1069,6 +1079,7 @@ export class PdfService {
         label: 'Cargando motor PDF.js',
         status: 'in_progress',
       });
+      const pdfjsLib = await loadPdfJs();
       const loadingTask = pdfjsLib.getDocument({
         data: new Uint8Array(buffer),
       });

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Calendar, Gauge, Fuel, Settings, Calculator, ExternalLink, Building2, Palette, MapPin, Mountain } from 'lucide-react';
+import { Calendar, Gauge, Fuel, Settings, Calculator, ExternalLink, Building2, Palette, MapPin, Mountain, GitCompare } from 'lucide-react';
 import { Vehicle } from '../types/stock';
 import { formatCurrency, formatKm } from '../utils/formatters';
 import { getSituacionOperativaInfo } from '../utils/autonetHelpers';
@@ -14,6 +14,8 @@ interface VehicleCardProps {
   onQuote?: (vehicle: Vehicle) => void;
   onOpenMarkAsSold?: (vehicle: Vehicle) => void;
   query?: string;
+  isComparing?: boolean;
+  onToggleCompare?: (vehicle: Vehicle) => void;
 }
 
 const Spec: React.FC<{ icon: React.ReactNode; children: React.ReactNode }> = ({ icon, children }) => (
@@ -24,7 +26,7 @@ const Spec: React.FC<{ icon: React.ReactNode; children: React.ReactNode }> = ({ 
 );
 
 export const VehicleCard: React.FC<VehicleCardProps> = React.memo(
-  ({ vehicle, onSelect, onStatusChange, onQuote, onOpenMarkAsSold, query }) => {
+  ({ vehicle, onSelect, onStatusChange, onQuote, onOpenMarkAsSold, query, isComparing, onToggleCompare }) => {
     const sold = vehicle.estado === 'Vendido';
     const historical = isHistoricalVehicle(vehicle);
     const hasValidAutonetUrl = Boolean(vehicle.urlAutonetOriginal && vehicle.urlAutonetOriginal.startsWith('http'));
@@ -45,7 +47,20 @@ export const VehicleCard: React.FC<VehicleCardProps> = React.memo(
             </span>
             <span className="text-[10.5px] font-mono text-slate-400 truncate">{vehicle.id}</span>
           </div>
-          <StatusBadge vehicle={vehicle} size="sm" />
+          <div className="flex items-center gap-1">
+            <StatusBadge vehicle={vehicle} size="sm" />
+            {onToggleCompare && (
+              <button
+                type="button"
+                onClick={() => onToggleCompare(vehicle)}
+                className={`p-1 rounded-md transition-colors ${isComparing ? 'bg-action-600 text-white' : 'text-slate-300 hover:text-action-700 hover:bg-action-50'}`}
+                title={isComparing ? 'Quitar de la comparación' : 'Sumar a la comparación'}
+                aria-pressed={!!isComparing}
+              >
+                <GitCompare className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Título */}

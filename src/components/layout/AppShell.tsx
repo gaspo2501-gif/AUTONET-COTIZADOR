@@ -17,6 +17,8 @@ import {
   Download,
   MoreHorizontal,
   X,
+  FileCheck2,
+  Megaphone,
 } from 'lucide-react';
 import { User } from 'firebase/auth';
 import { SyncStatus } from '../../services/firestoreService';
@@ -29,6 +31,8 @@ export type NavTab =
   | 'ventas'
   | 'comisiones'
   | 'presupuestos'
+  | 'boletos'
+  | 'publicidad'
   | 'actualizar'
   | 'historial'
   | 'configuracion';
@@ -39,13 +43,17 @@ interface NavItem {
   shortLabel?: string;
   icon: React.ComponentType<{ className?: string }>;
   group: 'comercial' | 'gestion';
+  /** Aparece en la barra inferior del celular (el resto va en "Más"). */
+  bottom?: boolean;
 }
 
 export const NAV_ITEMS: NavItem[] = [
-  { key: 'stock', label: 'Stock de usados', shortLabel: 'Stock', icon: Car, group: 'comercial' },
-  { key: 'ventas', label: 'Mis ventas', shortLabel: 'Ventas', icon: UserCheck, group: 'comercial' },
+  { key: 'stock', label: 'Stock de usados', shortLabel: 'Stock', icon: Car, group: 'comercial', bottom: true },
+  { key: 'presupuestos', label: 'Presupuestos', shortLabel: 'Presup.', icon: FileText, group: 'comercial', bottom: true },
+  { key: 'boletos', label: 'Boletos', shortLabel: 'Boletos', icon: FileCheck2, group: 'comercial', bottom: true },
+  { key: 'ventas', label: 'Mis ventas', shortLabel: 'Ventas', icon: UserCheck, group: 'comercial', bottom: true },
   { key: 'comisiones', label: 'Comisiones', shortLabel: 'Comisiones', icon: BadgePercent, group: 'comercial' },
-  { key: 'presupuestos', label: 'Presupuestos', shortLabel: 'Presup.', icon: FileText, group: 'comercial' },
+  { key: 'publicidad', label: 'Publicidad', shortLabel: 'Publicidad', icon: Megaphone, group: 'comercial' },
   { key: 'actualizar', label: 'Actualizar stock', icon: FileUp, group: 'gestion' },
   { key: 'historial', label: 'Historial de cargas', icon: History, group: 'gestion' },
   { key: 'configuracion', label: 'Configuración', icon: Settings, group: 'gestion' },
@@ -55,7 +63,9 @@ export const TAB_TITLES: Record<NavTab, { title: string; subtitle: string }> = {
   stock: { title: 'Stock de usados', subtitle: 'Autonet Usados Seleccionados · Neuquén y Río Negro' },
   ventas: { title: 'Mis ventas', subtitle: 'Unidades vendidas y datos de facturación' },
   comisiones: { title: 'Comisiones', subtitle: 'Liquidación mensual y proyección de premios' },
-  presupuestos: { title: 'Presupuestos', subtitle: 'Historial de presupuestos enviados a clientes' },
+  presupuestos: { title: 'Presupuestos', subtitle: 'Seguimiento de lo que enviaste a cada cliente' },
+  boletos: { title: 'Boletos', subtitle: 'Boletos de compraventa generados' },
+  publicidad: { title: 'Publicidad', subtitle: 'Historias para Instagram y estados de WhatsApp' },
   actualizar: { title: 'Actualizar stock', subtitle: 'Importar la lista oficial en PDF' },
   historial: { title: 'Historial de cargas', subtitle: 'Registro de actualizaciones de stock' },
   configuracion: { title: 'Configuración', subtitle: 'Asesor, respaldo y sincronización' },
@@ -278,7 +288,7 @@ export const AppShell: React.FC<AppShellProps> = ({
         aria-label="Navegación"
       >
         <div className="grid grid-cols-5 h-[var(--bottomnav-h)]">
-          {NAV_ITEMS.filter((i) => i.group === 'comercial').map((item) => {
+          {NAV_ITEMS.filter((i) => i.bottom).map((item) => {
             const active = currentTab === item.key;
             const badge = badges[item.key];
             return (
@@ -294,7 +304,7 @@ export const AppShell: React.FC<AppShellProps> = ({
                 {active && <span className="absolute top-0 inset-x-5 h-[3px] rounded-b bg-brand-600" />}
                 <span className="relative">
                   <item.icon className="w-[22px] h-[22px]" />
-                  {item.key === 'ventas' && typeof badge === 'number' && badge > 0 && (
+                  {item.key !== 'stock' && typeof badge === 'number' && badge > 0 && (
                     <span className="absolute -top-1.5 -right-2.5 min-w-[17px] h-[17px] px-1 rounded-full bg-brand-600 text-white text-[9.5px] font-black flex items-center justify-center border-2 border-white">
                       {badge}
                     </span>
@@ -308,7 +318,7 @@ export const AppShell: React.FC<AppShellProps> = ({
             type="button"
             onClick={() => setMoreOpen(true)}
             className={`flex flex-col items-center justify-center gap-1 text-[10.5px] font-bold ${
-              ['actualizar', 'historial', 'configuracion'].includes(currentTab) ? 'text-brand-600' : 'text-slate-500'
+              !NAV_ITEMS.some((i) => i.bottom && i.key === currentTab) ? 'text-brand-600' : 'text-slate-500'
             }`}
           >
             <MoreHorizontal className="w-[22px] h-[22px]" />
@@ -375,7 +385,7 @@ const MoreSheet: React.FC<{
           </button>
         </div>
         <div className="px-3 pb-3 space-y-1">
-          {NAV_ITEMS.filter((i) => i.group === 'gestion').map((item) => (
+          {NAV_ITEMS.filter((i) => !i.bottom).map((item) => (
             <button
               key={item.key}
               type="button"

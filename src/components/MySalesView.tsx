@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { todayISO } from '../utils/dates';
 import { 
   UserCheck, 
   DollarSign, 
@@ -469,7 +470,7 @@ export const MySalesView: React.FC<MySalesViewProps> = ({
                                   type="button"
                                   onClick={() => {
                                     setInvoiceModalVehicle(v);
-                                    setInvoiceDateInput(new Date().toISOString().split('T')[0]);
+                                    setInvoiceDateInput(todayISO());
                                   }}
                                   className="inline-flex items-center gap-1 px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-[11px] font-bold cursor-pointer shadow-2xs transition-colors"
                                 >

@@ -20,6 +20,7 @@ import { formatCurrency, formatKm } from '../utils/formatters';
 import { getSituacionOperativaInfo, getEmpresaBadgeClass } from '../utils/autonetHelpers';
 import { quoteService } from '../services/quoteService';
 import { VehicleQuoteModal } from './VehicleQuoteModal';
+import { VehicleQuickPanel } from './consultas/VehicleQuickPanel';
 
 interface VehicleDetailModalProps {
   vehicle: Vehicle | null;
@@ -28,6 +29,11 @@ interface VehicleDetailModalProps {
   onOpenQuote?: (vehicle: Vehicle) => void;
   onOpenMarkAsSold?: (vehicle: Vehicle) => void;
   onUpdateVehicleTableValue?: (vehicleIdOrPatent: string, tableValue: number, province: ProvinceTransfer) => void;
+  allVehicles?: Vehicle[];
+  onOpenVehicle?: (vehicle: Vehicle) => void;
+  isComparing?: boolean;
+  compareFull?: boolean;
+  onToggleCompare?: (vehicle: Vehicle) => void;
 }
 
 export const VehicleDetailModal: React.FC<VehicleDetailModalProps> = ({
@@ -37,6 +43,11 @@ export const VehicleDetailModal: React.FC<VehicleDetailModalProps> = ({
   onOpenQuote,
   onOpenMarkAsSold,
   onUpdateVehicleTableValue,
+  allVehicles,
+  onOpenVehicle,
+  isComparing,
+  compareFull,
+  onToggleCompare,
 }) => {
   const [isQuoteModalOpen, setIsQuoteModalOpen] = useState(false);
   const [copiedShare, setCopiedShare] = useState(false);
@@ -283,6 +294,17 @@ export const VehicleDetailModal: React.FC<VehicleDetailModalProps> = ({
                 {vehicle.observaciones || 'Sin observaciones registradas para esta unidad.'}
               </p>
             </div>
+
+            {allVehicles && (
+              <VehicleQuickPanel
+                vehicle={vehicle}
+                allVehicles={allVehicles}
+                onOpenVehicle={onOpenVehicle}
+                isComparing={isComparing}
+                compareFull={compareFull}
+                onToggleCompare={onToggleCompare}
+              />
+            )}
 
           </div>
 

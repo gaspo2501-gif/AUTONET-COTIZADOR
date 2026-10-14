@@ -10,8 +10,20 @@ import {
   Check,
   ArrowLeft,
   Loader2,
-  Settings
+  Settings,
+  ClipboardPaste,
+  RotateCcw,
+  CheckCircle2,
+  Tag,
+  XCircle,
 } from 'lucide-react';
+import { boletoHistoryService, BoletoRecord } from '../../services/boletoHistoryService';
+import { validateBoleto, computeBoletoCuadre } from '../../utils/boletoValidation';
+import { parseClientText } from '../../utils/clientParser';
+import { isValidDni, suggestCuil } from '../../utils/argentinaIds';
+import { appEvents } from '../../services/appEvents';
+import { todayISO } from '../../utils/budgetAlerts';
+import { useModalBehavior } from '../../hooks/useModalBehavior';
 import { Vehicle } from '../../types/stock';
 import { CommercialBudget, FinancingOption } from '../../services/quoteService';
 import { BoletoData, BoletoCompanyKey, BoletoDiagnosticReport, BoletoFinancingEntry } from '../../types/boleto';
@@ -27,17 +39,22 @@ interface BoletoModalProps {
   budget?: CommercialBudget | null;
   financingAlternatives?: FinancingOption[];
   sellerName?: string;
+  /** Datos de un boleto ya generado (para reabrirlo desde el historial). */
+  initialData?: BoletoData;
 }
 
-export const BoletoModal: React.FC<BoletoModalProps> = ({
-  isOpen,
+export const BoletoModal: React.FC<BoletoModalProps> = (props) => {
+  if (!props.isOpen || !props.vehicle) return null;
+  return <BoletoModalInner {...props} vehicle={props.vehicle} />;
+};
+
+const BoletoModalInner: React.FC<BoletoModalProps & { vehicle: Vehicle }> = ({
   onClose,
   vehicle,
   budget,
   financingAlternatives = [],
-  sellerName = '',
+  initialData,
 }) => {
-  if (!isOpen || !vehicle) return null;
 
   const companyKey = resolveCompanyFromVehicle(vehicle);
   const templateConfig = companyKey ? BOLETO_TEMPLATES_CONFIG[companyKey] : null;
@@ -49,8 +66,14 @@ export const BoletoModal: React.FC<BoletoModalProps> = ({
   const [actionError, setActionError] = useState<string | null>(null);
   const [showAdvancedMenu, setShowAdvancedMenu] = useState(false);
 
+  // Borrador guardado en este dispositivo (si se cerró la ventana a mitad de la carga)
+  const draftKey = (vehicle.patente || vehicle.id).toUpperCase();
+  const [restoredDraftAt, setRestoredDraftAt] = useState<string | null>(() =>
+    initialData ? null : boletoHistoryService.loadDraft(draftKey)?.savedAt || null
+  );
+
   // Inicialización de datos del boleto con la fecha actual en formato visible DD/MM/AAAA
-  const [boletoData, setBoletoData] = useState<BoletoData>(() => {
+  const buildInitialData = (): BoletoData => {
     const today = new Date();
     const dia = String(today.getDate()).padStart(2, '0');
     const mm = String(today.getMonth() + 1).padStart(2, '0');
@@ -155,7 +178,108 @@ export const BoletoModal: React.FC<BoletoModalProps> = ({
       },
       observaciones: '',
     };
+  };
+
+  const [boletoData, setBoletoData] = useState<BoletoData>(() => {
+    if (initialData) return initialData;
+    const draft = boletoHistoryService.loadDraft(draftKey);
+    return draft?.data || buildInitialData();
   });
+
+  // Guardado automático del borrador
+  const firstRender = useRef(true);
+  useEffect(() => {
+    if (firstRender.current) {
+      firstRender.current = false;
+      return;
+    }
+    const t = setTimeout(() => boletoHistoryService.saveDraft(draftKey, boletoData), 500);
+    return () => clearTimeout(t);
+  }, [boletoData, draftKey]);
+
+  const discardDraft = () => {
+    boletoHistoryService.clearDraft(draftKey);
+    setBoletoData(buildInitialData());
+    setRestoredDraftAt(null);
+    firstRender.current = true;
+  };
+
+  // Revisión de datos antes de generar
+  const issues = React.useMemo(() => validateBoleto(boletoData), [boletoData]);
+  const errorCount = issues.filter((i) => i.level === 'error').length;
+  const warningCount = issues.length - errorCount;
+  const [forceGenerate, setForceGenerate] = useState(false);
+  const [showIssues, setShowIssues] = useState(false);
+  const [generated, setGenerated] = useState<BoletoRecord | null>(null);
+
+  // Pegar datos del cliente
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const [pasteText, setPasteText] = useState('');
+  const [pasteResult, setPasteResult] = useState<string | null>(null);
+  const applyPaste = () => {
+    const found = parseClientText(pasteText);
+    const keys = Object.keys(found) as (keyof typeof found)[];
+    if (keys.length === 0) {
+      setPasteResult('No encontré datos reconocibles. Probá con etiquetas como "DNI:", "Domicilio:", "Tel:".');
+      return;
+    }
+    setBoletoData((prev) => ({ ...prev, cliente: { ...prev.cliente, ...found } }));
+    const labels: Record<string, string> = {
+      nombreCompleto: 'nombre', dni: 'DNI', cuitCuil: 'CUIT/CUIL', telefono: 'teléfono', email: 'email', direccion: 'domicilio',
+      localidad: 'localidad', codigoPostal: 'CP', nacimientoDia: 'nacimiento', estadoCivil: 'estado civil', actividad: 'actividad',
+    };
+    setPasteResult(`Completé: ${keys.map((k) => labels[k as string]).filter(Boolean).join(', ')}. Revisalos abajo.`);
+    setPasteText('');
+  };
+  const cuilSuggestions = React.useMemo(() => {
+    const c = boletoData.cliente;
+    if (c.cuitCuil?.trim() || !isValidDni(c.dni)) return [];
+    return [suggestCuil(c.dni || '', 'M'), suggestCuil(c.dni || '', 'F')].filter((x, i, a): x is string => !!x && a.indexOf(x) === i);
+  }, [boletoData.cliente]);
+
+  useModalBehavior(onClose);
+
+  const recordGenerated = () => {
+    const rec = boletoHistoryService.save({
+      companyKey: companyKey!,
+      vehiculo: { patente: vehicle.patente, marca: vehicle.marca, modelo: vehicle.modelo, version: vehicle.version, anio: vehicle.anio, empresa: vehicle.empresa },
+      clienteNombre: boletoData.cliente.nombreCompleto || 'SIN NOMBRE',
+      clienteDni: boletoData.cliente.dni,
+      total: computeBoletoCuadre(boletoData).total,
+      data: boletoData,
+      generadoConAdvertencias: issues.length > 0,
+    });
+    setGenerated(rec);
+  };
+
+  /** Bloquea la generación si hay errores, salvo que el asesor confirme "generar igual". */
+  const guard = (action: () => Promise<boolean>) => async () => {
+    if (errorCount > 0 && !forceGenerate) {
+      setShowIssues(true);
+      return;
+    }
+    const ok = await action();
+    if (ok) recordGenerated();
+  };
+
+  const registerSale = () => {
+    const d = boletoData;
+    const activas = (d.operacion.financiaciones || []).filter((f) => f.activo);
+    appEvents.requestRegisterSale({
+      patente: vehicle.patente,
+      prefill: {
+        precioRealVenta: Number(d.operacion.precioVehiculo) || vehicle.precio || 0,
+        soldAt: todayISO(),
+        tieneTomaUsado: d.entregaUsado.enabled,
+        valorTomaUsado: d.entregaUsado.enabled ? Number(d.entregaUsado.valorToma) || 0 : undefined,
+        marcaModeloTomaUsado: d.entregaUsado.enabled ? d.entregaUsado.modelo || undefined : undefined,
+        patenteTomaUsado: d.entregaUsado.enabled ? d.entregaUsado.patente || undefined : undefined,
+        usaCredinet: activas.some((f) => /credinet|wunder/i.test(f.entidad || '')),
+      },
+    });
+    boletoHistoryService.clearDraft(draftKey);
+    onClose();
+  };
 
   const [diagnosticReport, setDiagnosticReport] = useState<BoletoDiagnosticReport | null>(null);
   const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
@@ -251,8 +375,8 @@ export const BoletoModal: React.FC<BoletoModalProps> = ({
   };
 
   // Descarga directa del PDF oficial completado
-  const handleDownloadPdf = async () => {
-    if (!companyKey) return;
+  const handleDownloadPdf = async (): Promise<boolean> => {
+    if (!companyKey) return false;
     try {
       setIsActionLoading(true);
       setActionError(null);
@@ -273,18 +397,20 @@ export const BoletoModal: React.FC<BoletoModalProps> = ({
       document.body.removeChild(link);
 
       setTimeout(() => URL.revokeObjectURL(blobUrl), 1500);
+      return true;
     } catch (err: any) {
       console.error('Error al descargar el PDF:', err);
       const isTemplateError = err.message && (err.message.includes('plantilla') || err.message.includes('fetch') || err.message.includes('404'));
       setActionError(isTemplateError ? 'No se pudo cargar la plantilla oficial de esta empresa.' : (err.message || 'Error al descargar el PDF'));
+      return false;
     } finally {
       setIsActionLoading(false);
     }
   };
 
   // Impresión directa del PDF oficial
-  const handlePrintPdf = async () => {
-    if (!companyKey) return;
+  const handlePrintPdf = async (): Promise<boolean> => {
+    if (!companyKey) return false;
     try {
       setIsActionLoading(true);
       setActionError(null);
@@ -317,10 +443,12 @@ export const BoletoModal: React.FC<BoletoModalProps> = ({
           URL.revokeObjectURL(blobUrl);
         }, 3000);
       };
+      return true;
     } catch (err: any) {
       console.error('Error al imprimir el PDF:', err);
       const isTemplateError = err.message && (err.message.includes('plantilla') || err.message.includes('fetch') || err.message.includes('404'));
       setActionError(isTemplateError ? 'No se pudo cargar la plantilla oficial de esta empresa.' : (err.message || 'Error al imprimir el PDF'));
+      return false;
     } finally {
       setIsActionLoading(false);
     }
@@ -485,7 +613,61 @@ export const BoletoModal: React.FC<BoletoModalProps> = ({
         ) : (
           /* FORMULARIO DE CARGA DIRECTO (SIN PREVIEW EMBEBIDO) */
           <div className="flex-1 p-5 sm:p-6 overflow-y-auto bg-slate-50/50 max-h-[calc(96vh-140px)]">
-            <div className="max-w-4xl mx-auto">
+            <div className="max-w-4xl mx-auto space-y-3">
+              {restoredDraftAt && (
+                <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl bg-action-50 border border-action-200 text-[12px] text-action-800">
+                  <span>
+                    Recuperé el borrador de este boleto ({new Date(restoredDraftAt).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' })}).
+                  </span>
+                  <button type="button" onClick={discardDraft} className="inline-flex items-center gap-1 font-bold hover:underline">
+                    <RotateCcw className="w-3.5 h-3.5" /> Empezar de cero
+                  </button>
+                </div>
+              )}
+
+              {/* Pegar datos del cliente */}
+              <div className="rounded-xl border border-slate-200 bg-white">
+                <button type="button" onClick={() => setPasteOpen((o) => !o)} className="w-full flex items-center justify-between gap-2 px-3.5 py-2.5 text-left">
+                  <span className="inline-flex items-center gap-2 text-[13px] font-bold text-slate-800">
+                    <ClipboardPaste className="w-4 h-4 text-action-600" /> Pegar datos del cliente
+                  </span>
+                  <span className="text-[11.5px] text-slate-500">Copiá el mensaje donde te pasó sus datos y pegalo acá</span>
+                </button>
+                {pasteOpen && (
+                  <div className="px-3.5 pb-3.5 space-y-2">
+                    <textarea
+                      value={pasteText}
+                      onChange={(e) => setPasteText(e.target.value)}
+                      rows={5}
+                      placeholder={'Juan Carlos Pérez\nDNI 30.123.456\nCUIL 20-30123456-3\nDomicilio: Av. Argentina 1234, Neuquén\nTel 299 456-7890\nCasado, docente'}
+                      className="field font-mono !text-[12px]"
+                    />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button type="button" onClick={applyPaste} disabled={!pasteText.trim()} className="btn btn-sm btn-primary">
+                        Completar datos
+                      </button>
+                      {pasteResult && <span className="text-[12px] text-slate-600">{pasteResult}</span>}
+                    </div>
+                  </div>
+                )}
+                {cuilSuggestions.length > 0 && (
+                  <div className="px-3.5 pb-3 flex flex-wrap items-center gap-2 text-[12px] text-slate-600">
+                    <span>CUIL sugerido según el DNI:</span>
+                    {cuilSuggestions.map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        onClick={() => setBoletoData((prev) => ({ ...prev, cliente: { ...prev.cliente, cuitCuil: c } }))}
+                        className="chip !py-1 font-mono"
+                      >
+                        {c}
+                      </button>
+                    ))}
+                    <span className="text-slate-400">(confirmalo con el cliente)</span>
+                  </div>
+                )}
+              </div>
+
               <BoletoForm
                 data={boletoData}
                 onChange={setBoletoData}
@@ -495,6 +677,54 @@ export const BoletoModal: React.FC<BoletoModalProps> = ({
               />
             </div>
           </div>
+        )}
+
+        {/* REVISIÓN PREVIA / BOLETO GENERADO */}
+        {companyKey && (templateConfig?.available || customTemplateBytes) && (
+          generated ? (
+            <div className="px-5 py-3 bg-emerald-50 border-t border-emerald-200 flex flex-wrap items-center justify-between gap-2 text-[12.5px] text-emerald-900">
+              <span className="inline-flex items-center gap-2 font-semibold">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Boleto generado y guardado en el historial.
+              </span>
+              {vehicle.estado !== 'Vendido' && (
+                <button type="button" onClick={registerSale} className="btn btn-sm bg-emerald-600 hover:bg-emerald-700 text-white">
+                  <Tag className="w-3.5 h-3.5" /> Registrar la venta con estos datos
+                </button>
+              )}
+            </div>
+          ) : issues.length > 0 ? (
+            <div className={`border-t text-[12.5px] ${errorCount ? 'bg-red-50 border-red-200 text-red-900' : 'bg-amber-50 border-amber-200 text-amber-900'}`}>
+              <button type="button" onClick={() => setShowIssues((o) => !o)} className="w-full px-5 py-2.5 flex items-center justify-between gap-2 text-left font-bold">
+                <span className="inline-flex items-center gap-2">
+                  {errorCount ? <XCircle className="w-4 h-4 text-red-600" /> : <AlertTriangle className="w-4 h-4 text-amber-600" />}
+                  Revisión: {errorCount > 0 && `${errorCount} error${errorCount > 1 ? 'es' : ''}`}
+                  {errorCount > 0 && warningCount > 0 && ' · '}
+                  {warningCount > 0 && `${warningCount} aviso${warningCount > 1 ? 's' : ''}`}
+                </span>
+                <span className="text-[11.5px] font-semibold underline">{showIssues ? 'Ocultar' : 'Ver detalle'}</span>
+              </button>
+              {showIssues && (
+                <div className="px-5 pb-3 space-y-1.5 max-h-40 overflow-y-auto">
+                  {issues.map((i, k) => (
+                    <div key={k} className="flex items-start gap-2">
+                      <span className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${i.level === 'error' ? 'bg-red-500' : 'bg-amber-500'}`} />
+                      <span>{i.message}</span>
+                    </div>
+                  ))}
+                  {errorCount > 0 && (
+                    <label className="flex items-center gap-2 pt-1.5 font-semibold cursor-pointer">
+                      <input type="checkbox" checked={forceGenerate} onChange={(e) => setForceGenerate(e.target.checked)} />
+                      Revisé los datos y quiero generar el boleto igual
+                    </label>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="px-5 py-2 bg-emerald-50 border-t border-emerald-200 text-[12px] font-semibold text-emerald-800 inline-flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Datos revisados: listo para generar.
+            </div>
+          )
         )}
 
         {/* BARRA INFERIOR CON LOS BOTONES EXCLUSIVOS SOLICITADOS:
@@ -577,7 +807,7 @@ export const BoletoModal: React.FC<BoletoModalProps> = ({
                 <button
                   type="button"
                   disabled={isActionLoading}
-                  onClick={handlePrintPdf}
+                  onClick={guard(handlePrintPdf)}
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 disabled:bg-slate-400 text-white font-bold text-xs transition-colors cursor-pointer shadow-xs"
                 >
                   {isActionLoading ? (
@@ -591,7 +821,7 @@ export const BoletoModal: React.FC<BoletoModalProps> = ({
                 <button
                   type="button"
                   disabled={isActionLoading}
-                  onClick={handleDownloadPdf}
+                  onClick={guard(handleDownloadPdf)}
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-bold text-xs transition-colors cursor-pointer shadow-xs"
                 >
                   {isActionLoading ? (

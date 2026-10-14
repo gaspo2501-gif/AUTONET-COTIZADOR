@@ -1,6 +1,7 @@
 import { Vehicle, ProvinceTransfer } from '../types/stock';
 import { formatCurrency, formatKm } from '../utils/formatters';
 import { ADVISOR_INFO } from '../constants/advisor';
+import { SyncedCollection } from './syncedCollection';
 
 export interface AdvisorSettings {
   nombre: string;
@@ -67,6 +68,20 @@ export interface CommercialBudget {
   datosCliente: ClientData;
   datosAsesor: AdvisorSettings;
   observaciones: string[];
+
+  // Seguimiento comercial (sin duplicar el CRM: vive pegado al presupuesto)
+  seguimiento?: BudgetFollowUp;
+  updatedAt?: string;
+  deleted?: boolean;
+}
+
+export type BudgetFollowUpStatus = 'enviado' | 'respondio' | 'perdido' | 'vendido';
+
+export interface BudgetFollowUp {
+  estado: BudgetFollowUpStatus;
+  /** Fecha (YYYY-MM-DD) para volver a contactar. */
+  recordarEl?: string;
+  nota?: string;
 }
 
 const ADVISOR_STORAGE_KEY = 'autonet_advisor_settings_v1';
@@ -80,44 +95,34 @@ export const DEFAULT_ADVISOR: AdvisorSettings = {
   concesionaria: ADVISOR_INFO.concesionaria,
 };
 
-type BudgetListener = (budgets: CommercialBudget[]) => void;
+const budgetsStore = new SyncedCollection<CommercialBudget>('budgets', 'autonet_saved_budgets_v1', {
+  max: 300,
+  sort: (a, b) => Date.parse(b.fechaEmision) - Date.parse(a.fechaEmision),
+});
 
 class QuoteService {
-  private budgetListeners: BudgetListener[] = [];
-
-  /** Suscripción a cambios del historial de presupuestos (alta, edición, borrado). */
-  public subscribeBudgets(listener: BudgetListener): () => void {
-    this.budgetListeners.push(listener);
-    return () => {
-      this.budgetListeners = this.budgetListeners.filter((l) => l !== listener);
-    };
+  /** Suscripción a cambios del historial de presupuestos (alta, edición, borrado, otro dispositivo). */
+  public subscribeBudgets(listener: (budgets: CommercialBudget[]) => void): () => void {
+    return budgetsStore.subscribe(listener);
   }
 
-  private writeBudgets(list: CommercialBudget[]): void {
-    try {
-      localStorage.setItem(BUDGETS_STORAGE_KEY, JSON.stringify(list));
-    } catch (e) {
-      console.error('Error al guardar historial de presupuestos:', e);
-    }
-    this.budgetListeners.forEach((l) => l(list));
+  /** Actualiza el seguimiento (estado / recordatorio / nota) de un presupuesto. */
+  public updateBudgetFollowUp(budgetId: string, seguimiento: BudgetFollowUp): CommercialBudget | undefined {
+    return budgetsStore.update(budgetId, { seguimiento });
   }
 
   /** Actualiza los datos del cliente de un presupuesto ya emitido. */
   public updateBudgetClient(budgetId: string, clientData: ClientData): CommercialBudget | null {
-    const list = this.getBudgetHistory();
-    let updated: CommercialBudget | null = null;
-    const next = list.map((b) => {
-      if (b.id !== budgetId) return b;
-      updated = { ...b, datosCliente: { nombre: clientData.nombre?.trim() || '', telefono: clientData.telefono?.trim() || '' } };
-      return updated;
-    });
-    if (updated) this.writeBudgets(next);
-    return updated;
+    return (
+      budgetsStore.update(budgetId, {
+        datosCliente: { nombre: clientData.nombre?.trim() || '', telefono: clientData.telefono?.trim() || '' },
+      }) || null
+    );
   }
 
   /** Elimina un presupuesto del historial local. */
   public deleteBudget(budgetId: string): void {
-    this.writeBudgets(this.getBudgetHistory().filter((b) => b.id !== budgetId));
+    budgetsStore.remove(budgetId);
   }
 
   /** Arma el link de WhatsApp para el teléfono del cliente (formato Argentina). */
@@ -245,30 +250,14 @@ class QuoteService {
    * Guarda un presupuesto emitido en el historial local.
    */
   private saveBudgetToHistory(budget: CommercialBudget): void {
-    if (typeof window === 'undefined') return;
-    try {
-      const history = this.getBudgetHistory();
-      const nextHistory = [budget, ...history.filter((b) => b.id !== budget.id)].slice(0, 200);
-      this.writeBudgets(nextHistory);
-    } catch (e) {
-      console.error('Error al guardar presupuesto en historial:', e);
-    }
+    budgetsStore.upsert({ ...budget, seguimiento: budget.seguimiento || { estado: 'enviado' } });
   }
 
   /**
-   * Obtiene todos los presupuestos emitidos.
+   * Obtiene todos los presupuestos emitidos (más recientes primero).
    */
   public getBudgetHistory(): CommercialBudget[] {
-    if (typeof window === 'undefined') return [];
-    try {
-      const raw = localStorage.getItem(BUDGETS_STORAGE_KEY);
-      if (raw) {
-        return JSON.parse(raw) as CommercialBudget[];
-      }
-    } catch (e) {
-      console.error('Error al leer historial de presupuestos:', e);
-    }
-    return [];
+    return budgetsStore.getAll();
   }
 
   /**

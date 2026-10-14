@@ -339,7 +339,7 @@
   }
 }
 /* Solo opacidad: no crea un "containing block" que rompa modales position:fixed internos */
-.anim-fade {
+@utility anim-fade {
   animation: autonet-fade 0.2s ease-out backwards;
 }
 

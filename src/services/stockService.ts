@@ -1,4 +1,5 @@
 import { INITIAL_STOCK } from '../data/initialStock';
+import { todayISO } from '../utils/dates';
 import { DiffResult, UpdateHistoryRecord, Vehicle, VehicleStatus } from '../types/stock';
 import { autonetService, AutonetSyncResult } from './autonetService';
 import {
@@ -330,7 +331,7 @@ class StockService {
     if (index === -1) return null;
 
     const current = stock[index];
-    const today = new Date().toISOString().split('T')[0];
+    const today = todayISO();
     const updated: Vehicle = {
       ...current,
       estado: nuevoEstado,
@@ -425,7 +426,7 @@ class StockService {
     if (index === -1) return null;
 
     const current = stock[index];
-    const today = new Date().toISOString().split('T')[0];
+    const today = todayISO();
     const cleanFechaFacturacion = options.fechaFacturacion && typeof options.fechaFacturacion === 'string' && options.fechaFacturacion.trim()
       ? options.fechaFacturacion.trim().slice(0, 10)
       : (current.fechaFacturacion || undefined);
