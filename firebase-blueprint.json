@@ -1,0 +1,73 @@
+{
+  "entities": {
+    "Vehicle": {
+      "title": "Vehicle",
+      "description": "Unidad de vehículo usado del catálogo de Autonet",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "patente": { "type": "string" },
+        "marca": { "type": "string" },
+        "modelo": { "type": "string" },
+        "version": { "type": "string" },
+        "anio": { "type": "number" },
+        "color": { "type": "string" },
+        "kilometraje": { "type": "number" },
+        "precio": { "type": "number" },
+        "moneda": { "type": "string" },
+        "combustible": { "type": "string" },
+        "caja": { "type": "string" },
+        "traccion": { "type": "string" },
+        "estado": { "type": "string" },
+        "saleOwner": { "type": "string" },
+        "soldAt": { "type": "string" },
+        "soldPrice": { "type": "number" },
+        "isHistorical": { "type": "boolean" },
+        "fechaSalidaStock": { "type": "string" },
+        "cloudCreatedAt": { "type": "string" },
+        "cloudUpdatedAt": { "type": "string" },
+        "schemaVersion": { "type": "number" }
+      },
+      "required": ["id", "patente", "marca", "modelo", "anio", "precio", "estado"]
+    },
+    "UpdateHistoryRecord": {
+      "title": "UpdateHistoryRecord",
+      "description": "Registro de actualización de stock PDF",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "fecha": { "type": "string" },
+        "archivoNombre": { "type": "string" },
+        "vehiculosEncontrados": { "type": "number" },
+        "nuevos": { "type": "number" },
+        "modificados": { "type": "number" },
+        "sinCambios": { "type": "number" },
+        "noAparecen": { "type": "number" },
+        "cambiosPrecio": { "type": "number" }
+      },
+      "required": ["id", "fecha", "archivoNombre"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/vehicles/{patente}": {
+      "schema": "Vehicle",
+      "description": "Vehículos de stock del usuario identificado por patente normalizada"
+    },
+    "/users/{userId}/updateHistory/{historyId}": {
+      "schema": "UpdateHistoryRecord",
+      "description": "Historial de actualizaciones de stock PDF del usuario"
+    },
+    "/users/{userId}/meta/migration": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "migrationCompleted": { "type": "boolean" },
+          "migratedAt": { "type": "string" },
+          "schemaVersion": { "type": "number" },
+          "totalVehicles": { "type": "number" }
+        }
+      },
+      "description": "Metadatos de la migración inicial"
+    }
+  }
+}
