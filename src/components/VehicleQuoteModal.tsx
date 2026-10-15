@@ -17,7 +17,9 @@ import {
 } from 'lucide-react';
 import { Vehicle, ProvinceTransfer } from '../types/stock';
 import { dnrpaService } from '../services/dnrpaService';
-import { CommercialBudget, FinancingOption, quoteService } from '../services/quoteService';
+import { CommercialBudget, FinancingOption, quoteService, buildQuoteWhatsAppMessage, enrichFinancingOptions } from '../services/quoteService';
+import { financingService, calcFinancing, FinancingEntity } from '../services/financingService';
+import { whatsappLink } from '../services/messageTemplates';
 import { formatCurrency } from '../utils/formatters';
 import { ADVISOR_INFO } from '../constants/advisor';
 import { BudgetModal } from './BudgetModal';
@@ -30,7 +32,6 @@ interface VehicleQuoteModalProps {
   onOpenBudget?: (budget: CommercialBudget) => void;
 }
 
-const COMMON_ENTITIES = ['CREDINET', 'BNA', 'Santander', 'Macro', 'Galicia', 'BBVA'];
 
 export const VehicleQuoteModal: React.FC<VehicleQuoteModalProps> = ({
   vehicle,
@@ -55,15 +56,18 @@ export const VehicleQuoteModal: React.FC<VehicleQuoteModalProps> = ({
   // 3. Financiación manual
   const [llevaFinanciacion, setLlevaFinanciacion] = useState(false);
   const [opcionesFinanciacion, setOpcionesFinanciacion] = useState<FinancingOption[]>([
-    {
-      id: 'opc-1',
-      entidad: 'CREDINET',
-      montoFinanciado: 0,
-      cuotas: 24,
-      montoCuota: 0,
-      detalle: 'Cuota fija en pesos',
-    },
+    { id: 'opc-1', entidad: 'CREDINET', montoFinanciado: 0, cuotas: 0, montoCuota: 0, detalle: '' },
   ]);
+  const [entities, setEntities] = useState<FinancingEntity[]>(() => financingService.getEntities());
+  const [finSettings, setFinSettings] = useState(() => financingService.getSettings());
+  React.useEffect(
+    () =>
+      financingService.subscribe(() => {
+        setEntities(financingService.getEntities());
+        setFinSettings(financingService.getSettings());
+      }),
+    []
+  );
 
   const [copiedPlate, setCopiedPlate] = useState(false);
   const [copiedShare, setCopiedShare] = useState(false);
@@ -96,9 +100,9 @@ export const VehicleQuoteModal: React.FC<VehicleQuoteModalProps> = ({
       ...prev,
       {
         id: `opc-${Date.now()}`,
-        entidad: 'BNA',
+        entidad: entities.find((e) => !prev.some((o) => o.entidad === e.nombre))?.nombre || 'BNA',
         montoFinanciado: 0,
-        cuotas: 36,
+        cuotas: 0,
         montoCuota: 0,
         detalle: '',
       },
@@ -137,7 +141,7 @@ export const VehicleQuoteModal: React.FC<VehicleQuoteModalProps> = ({
       onUpdateVehicleTableValue(vehicle.id, parsedTableValue, province);
     }
 
-    const validOptions = opcionesFinanciacion.filter((o) => o.montoCuota > 0 && o.entidad.trim());
+    const validOptions = opcionesFinanciacion.filter((o) => (o.montoFinanciado || 0) > 0 && o.entidad.trim());
 
     const newBudget = quoteService.createBudget({
       vehicle,
@@ -169,7 +173,7 @@ export const VehicleQuoteModal: React.FC<VehicleQuoteModalProps> = ({
             financiacion: llevaFinanciacion
               ? {
                   llevaFinanciacion: true,
-                  opciones: opcionesFinanciacion.filter((o) => o.montoCuota > 0),
+                  opciones: opcionesFinanciacion.filter((o) => (o.montoFinanciado || 0) > 0),
                 }
               : undefined,
           })
@@ -178,47 +182,32 @@ export const VehicleQuoteModal: React.FC<VehicleQuoteModalProps> = ({
     [isBoletoOpen, vehicle, parsedTableValue, province, llevaFinanciacion, opcionesFinanciacion]
   );
 
+  // Alternativas con gastos y entrega mínima calculados
+  const enrichedOptions = React.useMemo(
+    () => (llevaFinanciacion ? enrichFinancingOptions(opcionesFinanciacion, vehiclePrice, transferenciaEstimada) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [llevaFinanciacion, opcionesFinanciacion, vehiclePrice, transferenciaEstimada, entities, finSettings]
+  );
+
+  const shareText = buildQuoteWhatsAppMessage({
+    vehiculo: vehicle,
+    provincia: province,
+    precio: vehiclePrice,
+    transferencia: transferenciaEstimada,
+    total: totalOperacion,
+    opciones: enrichedOptions,
+  });
+
   // Copiar resumen al portapapeles para WhatsApp con firma fija del asesor
-  const handleCopyShare = () => {
+  const handleCopyShare = async () => {
     if (!hasValidTableValue) return;
-
-    const validOptions = opcionesFinanciacion.filter((o) => o.montoCuota > 0 && o.entidad.trim());
-
-    let summary = `🚗 *COTIZACIÓN DE TRANSFERENCIA*
-*Vehículo:* ${vehicle.marca} ${vehicle.modelo} ${vehicle.version} (${vehicle.anio})
-*Patente:* ${vehicle.patente}
-*Provincia:* ${province}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-💰 PRECIO DE VENTA: ${formatCurrency(vehiclePrice)}
-📋 VALOR DE TABLA DNRPA: ${formatCurrency(parsedTableValue)}
-📊 VALOR BASE PARA TRANSFERENCIA: ${formatCurrency(baseImponible)}
-🏛️ ALÍCUOTA: ${alicuotaLabel} (${province})
-📄 TRANSFERENCIA ESTIMADA: ${formatCurrency(transferenciaEstimada)}
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-🏁 TOTAL ESTIMADO OPERACIÓN: ${formatCurrency(totalOperacion)}
-`;
-
-    if (llevaFinanciacion && validOptions.length > 0) {
-      summary += `\n🏦 *OPCIONES DE FINANCIACIÓN:*\n`;
-      validOptions.forEach((opc) => {
-        const cuotaStr = formatCurrency(opc.montoCuota);
-        const det = opc.detalle ? ` (${opc.detalle})` : '';
-        summary += `• ${opc.entidad}: ${opc.cuotas} cuotas de ${cuotaStr}${det}\n`;
-      });
+    try {
+      await navigator.clipboard.writeText(shareText);
+      setCopiedShare(true);
+      setTimeout(() => setCopiedShare(false), 2200);
+    } catch {
+      /* sin portapapeles */
     }
-
-    summary += `\n_Aviso: La transferencia se calcula sobre el mayor valor entre el precio de venta y el valor de tabla DNRPA. El importe es estimativo y puede variar según los costos y conceptos aplicables al momento de realizar la transferencia en el Registro Seccional correspondiente._
-_Presupuesto válido por 24 horas._
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-${ADVISOR_INFO.nombre} | ${ADVISOR_INFO.cargo}
-📞 ${ADVISOR_INFO.telefono}
-📍 ${ADVISOR_INFO.direccion}, ${ADVISOR_INFO.ciudad}, ${ADVISOR_INFO.provincia}, ${ADVISOR_INFO.pais}`;
-
-    navigator.clipboard.writeText(summary);
-    setCopiedShare(true);
-    setTimeout(() => setCopiedShare(false), 2200);
   };
 
   return (
@@ -494,130 +483,142 @@ ${ADVISOR_INFO.nombre} | ${ADVISOR_INFO.cargo}
 
               {llevaFinanciacion && (
                 <div className="space-y-3 pt-3 border-t border-slate-200">
-                  <div className="text-[11px] text-slate-500 italic">
-                    Carga manual de cuotas sin cálculo automático de intereses ni fórmulas ocultas.
-                  </div>
+                  {!hasValidTableValue && (
+                    <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-2">
+                      Cargá el valor de tabla DNRPA: la entrega mínima incluye la transferencia.
+                    </div>
+                  )}
+                  {opcionesFinanciacion.map((opc, idx) => {
+                    const entity = financingService.findEntity(opc.entidad);
+                    const r = calcFinancing({
+                      precioVehiculo: vehiclePrice,
+                      transferencia: transferenciaEstimada,
+                      montoPrestamo: opc.montoFinanciado || 0,
+                      cuotas: opc.cuotas,
+                      valorCuota: opc.montoCuota,
+                      entity,
+                      redondeo: finSettings.redondeoEntrega,
+                    });
+                    const money = (n: number) => (n > 0 ? new Intl.NumberFormat('es-AR').format(n) : '');
+                    return (
+                      <div key={opc.id} className="bg-white rounded-xl p-3 border border-slate-200 space-y-2.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-bold text-slate-800 text-[11px] uppercase">
+                            Opción {idx + 1}
+                            {entity && (
+                              <span className={`ml-2 normal-case font-semibold ${entity.conGastos ? 'text-amber-700' : 'text-emerald-700'}`}>
+                                {entity.conGastos ? `con gastos (${entity.otorgamientoPct}% + prenda ${entity.prendaPct}%)` : 'sin gastos adicionales'}
+                              </span>
+                            )}
+                          </span>
+                          {opcionesFinanciacion.length > 1 && (
+                            <button type="button" onClick={() => handleRemoveFinancingOption(opc.id)} className="text-red-500 hover:text-red-700 p-1 rounded" title="Quitar opción">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
 
-                  {opcionesFinanciacion.map((opc, idx) => (
-                    <div
-                      key={opc.id}
-                      className="bg-white rounded-lg p-3 border border-slate-200 shadow-xs space-y-2 relative"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-slate-800 text-[11px] uppercase">
-                          Alternativa #{idx + 1}
-                        </span>
-                        {opcionesFinanciacion.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveFinancingOption(opc.id)}
-                            className="text-red-500 hover:text-red-700 p-1 rounded"
-                            title="Eliminar opción"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                        <div className="flex flex-wrap gap-1">
+                          {entities.map((ent) => (
+                            <button
+                              key={ent.id}
+                              type="button"
+                              onClick={() => handleUpdateFinancingOption(opc.id, 'entidad', ent.nombre)}
+                              className={`text-[11px] font-bold px-2 py-1 rounded-lg border ${
+                                opc.entidad.toUpperCase() === ent.nombre ? 'bg-blue-600 border-blue-600 text-white' : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300'
+                              }`}
+                            >
+                              {ent.nombre}
+                            </button>
+                          ))}
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                          <label className="block">
+                            <span className="block text-[10px] font-bold text-slate-600 mb-0.5 uppercase">Monto a prestar</span>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              value={money(opc.montoFinanciado || 0)}
+                              onChange={(e) => {
+                                const raw = e.target.value.replace(/\D/g, '');
+                                handleUpdateFinancingOption(opc.id, 'montoFinanciado', raw ? Number(raw) : 0);
+                              }}
+                              placeholder="Ej. 8.390.000"
+                              className="w-full px-2.5 py-2 rounded-lg border border-slate-300 text-sm font-mono font-bold text-slate-900"
+                            />
+                          </label>
+                          <label className="block">
+                            <span className="block text-[10px] font-bold text-slate-600 mb-0.5 uppercase">
+                              Cuotas {entity?.conGastos ? '*' : '(opcional)'}
+                            </span>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              value={opc.cuotas > 0 ? String(opc.cuotas) : ''}
+                              onChange={(e) => {
+                                const raw = e.target.value.replace(/\D/g, '').slice(0, 3);
+                                handleUpdateFinancingOption(opc.id, 'cuotas', raw ? Number(raw) : 0);
+                              }}
+                              placeholder="Ej. 36"
+                              className="w-full px-2.5 py-2 rounded-lg border border-slate-300 text-sm font-mono font-bold text-slate-900"
+                            />
+                          </label>
+                          <label className="block">
+                            <span className="block text-[10px] font-bold text-slate-600 mb-0.5 uppercase">
+                              Valor de cuota {entity?.conGastos ? '*' : '(opcional)'}
+                            </span>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              value={money(opc.montoCuota)}
+                              onChange={(e) => {
+                                const raw = e.target.value.replace(/\D/g, '');
+                                handleUpdateFinancingOption(opc.id, 'montoCuota', raw ? Number(raw) : 0);
+                              }}
+                              placeholder="Ej. 420.000"
+                              className="w-full px-2.5 py-2 rounded-lg border border-slate-300 text-sm font-mono font-bold text-slate-900"
+                            />
+                          </label>
+                        </div>
+
+                        {(opc.montoFinanciado || 0) > 0 && (
+                          <div className="rounded-lg bg-slate-900 text-white p-3 space-y-1 text-[12px]">
+                            <div className="flex justify-between text-slate-300">
+                              <span>Auto + transferencia</span>
+                              <span className="font-mono">{formatCurrency(vehiclePrice + transferenciaEstimada)}</span>
+                            </div>
+                            {entity?.conGastos && (
+                              <>
+                                <div className="flex justify-between text-slate-300">
+                                  <span>Otorgamiento ({entity.otorgamientoPct}% del monto)</span>
+                                  <span className="font-mono">+ {formatCurrency(r.otorgamiento)}</span>
+                                </div>
+                                <div className="flex justify-between text-slate-300">
+                                  <span>Inscripción de prenda ({entity.prendaPct}% de cuotas × valor)</span>
+                                  <span className="font-mono">{r.faltanDatosPrenda ? 'faltan cuotas' : `+ ${formatCurrency(r.prenda)}`}</span>
+                                </div>
+                              </>
+                            )}
+                            <div className="flex justify-between text-slate-300">
+                              <span>Capital financiado</span>
+                              <span className="font-mono">− {formatCurrency(opc.montoFinanciado || 0)}</span>
+                            </div>
+                            <div className="flex justify-between items-baseline pt-1.5 mt-1 border-t border-slate-700">
+                              <span className="font-extrabold uppercase tracking-wide">Entrega mínima</span>
+                              <span className="font-mono font-black text-lg text-emerald-400">{formatCurrency(r.entregaMinima)}</span>
+                            </div>
+                            {r.entregaMinima !== r.entregaExacta && !r.sinEntrega && (
+                              <div className="text-right text-[10.5px] text-slate-400">exacto {formatCurrency(r.entregaExacta)} · redondeado hacia arriba</div>
+                            )}
+                            {r.faltanDatosPrenda && (
+                              <div className="text-[11px] text-amber-300 pt-1">Para {opc.entidad} cargá cuotas y valor de cuota del simulador: la prenda se calcula con eso.</div>
+                            )}
+                          </div>
                         )}
                       </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2">
-                        {/* Entidad */}
-                        <div>
-                          <label className="block text-[10px] font-bold text-slate-600 mb-0.5 uppercase">
-                            Entidad
-                          </label>
-                          <input
-                            type="text"
-                            value={opc.entidad}
-                            onChange={(e) => handleUpdateFinancingOption(opc.id, 'entidad', e.target.value)}
-                            placeholder="Ej. CREDINET, BNA"
-                            className="w-full px-2 py-1.5 rounded-md border border-slate-300 text-xs font-semibold uppercase"
-                          />
-                          <div className="flex flex-wrap gap-1 mt-1">
-                            {COMMON_ENTITIES.slice(0, 3).map((ent) => (
-                              <button
-                                key={ent}
-                                type="button"
-                                onClick={() => handleUpdateFinancingOption(opc.id, 'entidad', ent)}
-                                className={`text-[9px] px-1.5 py-0.5 rounded border ${
-                                  opc.entidad === ent
-                                    ? 'bg-blue-50 border-blue-400 text-blue-700 font-bold'
-                                    : 'bg-slate-50 border-slate-200 text-slate-600'
-                                }`}
-                              >
-                                {ent}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Monto Financiado */}
-                        <div>
-                          <label className="block text-[10px] font-bold text-slate-600 mb-0.5 uppercase">
-                            Monto Financiado ($)
-                          </label>
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            value={opc.montoFinanciado && opc.montoFinanciado > 0 ? new Intl.NumberFormat('es-AR').format(opc.montoFinanciado) : ''}
-                            onChange={(e) => {
-                              const raw = e.target.value.replace(/\D/g, '');
-                              handleUpdateFinancingOption(opc.id, 'montoFinanciado', raw ? Number(raw) : 0);
-                            }}
-                            placeholder="Ej. 10.000.000"
-                            className="w-full px-2 py-1.5 rounded-md border border-slate-300 text-xs font-mono font-bold text-blue-900 bg-white"
-                          />
-                        </div>
-
-                        {/* Cuotas */}
-                        <div>
-                          <label className="block text-[10px] font-bold text-slate-600 mb-0.5 uppercase">
-                            Cantidad de Cuotas
-                          </label>
-                          <select
-                            value={opc.cuotas}
-                            onChange={(e) => handleUpdateFinancingOption(opc.id, 'cuotas', Number(e.target.value))}
-                            className="w-full px-2 py-1.5 rounded-md border border-slate-300 text-xs font-semibold bg-white"
-                          >
-                            <option value={12}>12 cuotas</option>
-                            <option value={18}>18 cuotas</option>
-                            <option value={24}>24 cuotas</option>
-                            <option value={36}>36 cuotas</option>
-                            <option value={48}>48 cuotas</option>
-                            <option value={60}>60 cuotas</option>
-                          </select>
-                        </div>
-
-                        {/* Monto de Cuota */}
-                        <div>
-                          <label className="block text-[10px] font-bold text-slate-600 mb-0.5 uppercase">
-                            Monto por Cuota ($)
-                          </label>
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            value={opc.montoCuota > 0 ? new Intl.NumberFormat('es-AR').format(opc.montoCuota) : ''}
-                            onChange={(e) => {
-                              const raw = e.target.value.replace(/\D/g, '');
-                              handleUpdateFinancingOption(opc.id, 'montoCuota', raw ? Number(raw) : 0);
-                            }}
-                            placeholder="Ej. 350.000"
-                            className="w-full px-2 py-1.5 rounded-md border border-slate-300 text-xs font-mono font-bold text-slate-900"
-                          />
-                        </div>
-                      </div>
-
-                      {/* Detalle opcional */}
-                      <div>
-                        <input
-                          type="text"
-                          value={opc.detalle || ''}
-                          onChange={(e) => handleUpdateFinancingOption(opc.id, 'detalle', e.target.value)}
-                          placeholder="Observación opcional (ej. Cuota fija en pesos, Tasa anual especial)"
-                          className="w-full px-2 py-1 rounded border border-slate-200 text-[11px] text-slate-600"
-                        />
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
 
                   <button
                     type="button"
@@ -625,7 +626,7 @@ ${ADVISOR_INFO.nombre} | ${ADVISOR_INFO.cargo}
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-100 border border-slate-300 text-blue-700 font-bold text-[11px] transition-colors shadow-xs"
                   >
                     <Plus className="w-3.5 h-3.5" />
-                    <span>Agregar otra alternativa de financiación</span>
+                    <span>Agregar otra entidad para comparar</span>
                   </button>
                 </div>
               )}
@@ -669,6 +670,17 @@ ${ADVISOR_INFO.nombre} | ${ADVISOR_INFO.cargo}
                   <span>{copiedShare ? '¡Copiado!' : 'Copiar WhatsApp'}</span>
                 </button>
               )}
+              {hasValidTableValue && (
+                <a
+                  href={whatsappLink(shareText)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition-colors"
+                >
+                  <Share2 className="w-3.5 h-3.5" />
+                  <span>Abrir en WhatsApp</span>
+                </a>
+              )}
             </div>
 
             <button
@@ -698,7 +710,7 @@ ${ADVISOR_INFO.nombre} | ${ADVISOR_INFO.cargo}
           onClose={() => setIsBoletoOpen(false)}
           vehicle={vehicle}
           budget={activeBudget || boletoDraftBudget}
-          financingAlternatives={llevaFinanciacion ? opcionesFinanciacion.filter((o) => o.montoCuota > 0) : []}
+          financingAlternatives={enrichedOptions}
         />
       )}
     </>

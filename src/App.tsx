@@ -37,6 +37,7 @@ const BudgetsView = lazy(() => import('./components/presupuestos/BudgetsView').t
 const BoletosView = lazy(() => import('./components/boletos/BoletosView').then((m) => ({ default: m.BoletosView })));
 const StoriesView = lazy(() => import('./components/publicidad/StoriesView').then((m) => ({ default: m.StoriesView })));
 const MessageTemplatesEditor = lazy(() => import('./components/consultas/MessageTemplatesEditor').then((m) => ({ default: m.MessageTemplatesEditor })));
+const FinancingEntitiesEditor = lazy(() => import('./components/consultas/FinancingEntitiesEditor').then((m) => ({ default: m.FinancingEntitiesEditor })));
 const MigrationModal = lazy(() => import('./components/MigrationModal').then((m) => ({ default: m.MigrationModal })));
 
 const DEFAULT_FILTERS: StockFilters = {
@@ -392,7 +393,8 @@ export default function App() {
               {currentTab === 'historial' && <UpdateHistoryView />}
 
               {currentTab === 'configuracion' && (
-                <div className="mb-6">
+                <div className="mb-6 space-y-6">
+                  <FinancingEntitiesEditor onToast={showToast} />
                   <MessageTemplatesEditor sampleVehicle={vehicles.find((v) => v.estado === 'Disponible')} onToast={showToast} />
                 </div>
               )}

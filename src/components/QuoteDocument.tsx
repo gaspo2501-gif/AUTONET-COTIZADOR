@@ -166,31 +166,44 @@ export const QuoteDocument: React.FC<QuoteDocumentProps> = ({
               <thead>
                 <tr className="bg-slate-100 text-slate-600 font-bold border-b border-slate-200">
                   <th className="py-2 px-3">Entidad</th>
-                  <th className="py-2 px-3">Monto Financiado</th>
+                  <th className="py-2 px-3 text-right">Capital financiado</th>
                   <th className="py-2 px-3">Plazo</th>
-                  <th className="py-2 px-3 text-right">Cuota Estimada</th>
-                  <th className="py-2 px-3">Detalle</th>
+                  <th className="py-2 px-3 text-right">Gastos crédito</th>
+                  <th className="py-2 px-3 text-right">Entrega mínima</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-800">
-                {financingOptions.map((opt, index) => (
-                  <tr key={index} className="hover:bg-slate-50/50">
-                    <td className="py-2 px-3 font-bold text-slate-900">{opt.entidad}</td>
-                    <td className="py-2 px-3 font-mono text-slate-900">
-                      {opt.montoFinanciado && opt.montoFinanciado > 0
-                        ? formatCurrency(opt.montoFinanciado, vehicle.moneda || 'ARS')
-                        : '—'}
-                    </td>
-                    <td className="py-2 px-3">{opt.cuotas} cuotas</td>
-                    <td className="py-2 px-3 text-right font-mono font-bold text-slate-900">
-                      aprox. {formatCurrency(opt.montoCuota, vehicle.moneda || 'ARS')}
-                    </td>
-                    <td className="py-2 px-3 text-slate-500 text-[11px]">{opt.detalle || '—'}</td>
-                  </tr>
-                ))}
+                {financingOptions.map((opt, index) => {
+                  const gastos = (opt.gastosOtorgamiento || 0) + (opt.gastosPrenda || 0);
+                  return (
+                    <tr key={index}>
+                      <td className="py-2 px-3 font-bold text-slate-900">{opt.entidad}</td>
+                      <td className="py-2 px-3 text-right font-mono text-slate-900">
+                        {opt.montoFinanciado && opt.montoFinanciado > 0 ? formatCurrency(opt.montoFinanciado, vehicle.moneda || 'ARS') : '—'}
+                      </td>
+                      <td className="py-2 px-3">
+                        {opt.cuotas > 0 ? `${opt.cuotas} cuotas` : '—'}
+                        {opt.cuotas > 0 && opt.montoCuota > 0 && (
+                          <span className="block text-[10px] text-slate-500">de {formatCurrency(opt.montoCuota, vehicle.moneda || 'ARS')}</span>
+                        )}
+                      </td>
+                      <td className="py-2 px-3 text-right font-mono text-slate-700">
+                        {opt.conGastos ? formatCurrency(gastos, vehicle.moneda || 'ARS') : 'Sin gastos'}
+                      </td>
+                      <td className="py-2 px-3 text-right font-mono font-black text-slate-950">
+                        {opt.entregaMinima !== undefined ? formatCurrency(opt.entregaMinima, vehicle.moneda || 'ARS') : '—'}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
+          {financingOptions.some((o) => o.conGastos) && (
+            <p className="mt-1.5 text-[10px] text-slate-500">
+              Gastos crédito: otorgamiento sobre el monto prestado e inscripción de prenda sobre el total de cuotas, según la entidad.
+            </p>
+          )}
         </section>
       )}
 

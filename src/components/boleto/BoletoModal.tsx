@@ -95,7 +95,7 @@ const BoletoModalInner: React.FC<BoletoModalProps & { vehicle: Vehicle }> = ({
         initialFinanciaciones.push({
           id: opt.id || `fin-init-${idx}`,
           entidad: opt.entidad,
-          montoFinanciado: Math.round(precioUnidad * 0.5),
+          montoFinanciado: opt.montoFinanciado && opt.montoFinanciado > 0 ? opt.montoFinanciado : Math.round(precioUnidad * 0.5),
           cuotas: opt.cuotas,
           valorCuota: opt.montoCuota,
           activo: idx === 0,

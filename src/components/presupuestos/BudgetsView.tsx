@@ -388,6 +388,20 @@ export const BudgetsView: React.FC<BudgetsViewProps> = ({ vehicles, onOpenBudget
                               : `El precio cambió: hoy ${formatCurrency(current!.precio, current!.moneda)}.`}
                           </div>
                         )}
+                        {(b.financiacion?.opciones || []).some((o) => o.entregaMinima !== undefined) && (
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            {b.financiacion!.opciones
+                              .filter((o) => o.entregaMinima !== undefined)
+                              .map((o) => (
+                                <span key={o.id} className="inline-flex items-center gap-1.5 text-[11.5px] px-2 py-1 rounded-lg bg-slate-50 border border-slate-200">
+                                  <span className="font-bold text-slate-700">{o.entidad}</span>
+                                  <span className="text-slate-500">entrega</span>
+                                  <span className="font-extrabold tabular text-slate-900">{formatCurrency(o.entregaMinima || 0)}</span>
+                                  <span className="text-slate-400">· financia {formatCurrency(o.montoFinanciado || 0)}</span>
+                                </span>
+                              ))}
+                          </div>
+                        )}
                         <FollowUp b={b} />
                       </div>
 

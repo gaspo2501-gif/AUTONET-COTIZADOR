@@ -2,6 +2,7 @@ import { Vehicle, ProvinceTransfer } from '../types/stock';
 import { formatCurrency, formatKm } from '../utils/formatters';
 import { ADVISOR_INFO } from '../constants/advisor';
 import { SyncedCollection } from './syncedCollection';
+import { calcFinancing, financingService } from './financingService';
 
 export interface AdvisorSettings {
   nombre: string;
@@ -19,10 +20,16 @@ export interface ClientData {
 export interface FinancingOption {
   id: string;
   entidad: string;
+  /** Monto a prestar (lo devuelve el simulador del banco). */
   montoFinanciado?: number;
   cuotas: number;
   montoCuota: number;
   detalle?: string;
+  // Calculados al generar el presupuesto (quedan guardados tal cual se enviaron)
+  conGastos?: boolean;
+  gastosOtorgamiento?: number;
+  gastosPrenda?: number;
+  entregaMinima?: number;
 }
 
 export interface FinancingPlan {
@@ -94,6 +101,80 @@ export const DEFAULT_ADVISOR: AdvisorSettings = {
   sucursal: `${ADVISOR_INFO.direccion}, ${ADVISOR_INFO.ciudad}`,
   concesionaria: ADVISOR_INFO.concesionaria,
 };
+
+/** Calcula gastos y entrega mínima de cada alternativa con la configuración vigente. */
+export function enrichFinancingOptions(opciones: FinancingOption[], precio: number, transferencia: number): FinancingOption[] {
+  const { redondeoEntrega } = financingService.getSettings();
+  return opciones
+    .filter((o) => o.entidad?.trim() && (Number(o.montoFinanciado) > 0 || Number(o.montoCuota) > 0))
+    .map((o) => {
+      const entity = financingService.findEntity(o.entidad);
+      const r = calcFinancing({
+        precioVehiculo: precio,
+        transferencia,
+        montoPrestamo: Number(o.montoFinanciado) || 0,
+        cuotas: o.cuotas,
+        valorCuota: o.montoCuota,
+        entity,
+        redondeo: redondeoEntrega,
+      });
+      return {
+        ...o,
+        entidad: o.entidad.trim().toUpperCase(),
+        conGastos: Boolean(entity?.conGastos),
+        gastosOtorgamiento: r.otorgamiento,
+        gastosPrenda: r.prenda,
+        entregaMinima: Number(o.montoFinanciado) > 0 ? r.entregaMinima : undefined,
+      };
+    });
+}
+
+const LINE = '━━━━━━━━━━━━━━━━━━━━━━━━━━';
+
+/**
+ * Mensaje de WhatsApp con el formato de cotización del asesor:
+ * vehículo → precio → transferencia → total → por cada financiación: entrega mínima y capital.
+ */
+export function buildQuoteWhatsAppMessage(p: {
+  vehiculo: { marca: string; modelo: string; version: string; anio: number; patente: string };
+  provincia: string;
+  precio: number;
+  transferencia: number;
+  total: number;
+  opciones?: FinancingOption[];
+}): string {
+  const v = p.vehiculo;
+  let t = `🚗 *COTIZACIÓN DE TRANSFERENCIA*\n`;
+  t += `*Vehículo:* ${v.marca} ${v.modelo} ${v.version} (${v.anio})\n`;
+  t += `*Patente:* ${v.patente}\n`;
+  t += `*Provincia:* ${p.provincia}\n\n`;
+  t += `${LINE}\n`;
+  t += `💰 *PRECIO DE VENTA:* ${formatCurrency(p.precio)}\n\n`;
+  t += `📄 *TRANSFERENCIA ESTIMADA:* ${formatCurrency(p.transferencia)}\n`;
+  t += `${LINE}\n`;
+  t += `🏁 *TOTAL ESTIMADO OPERACIÓN:* ${formatCurrency(p.total)}\n`;
+
+  const opciones = (p.opciones || []).filter((o) => Number(o.montoFinanciado) > 0);
+  opciones.forEach((o, i) => {
+    t += `\n`;
+    if (opciones.length > 1) t += `🏦 *OPCIÓN ${i + 1}: ${o.entidad}*\n`;
+    if (o.conGastos && ((o.gastosOtorgamiento || 0) > 0 || (o.gastosPrenda || 0) > 0)) {
+      t += `Gastos de otorgamiento: ${formatCurrency(o.gastosOtorgamiento || 0)}\n`;
+      t += `Inscripción de prenda: ${formatCurrency(o.gastosPrenda || 0)}\n`;
+    }
+    t += `*ENTREGA MÍNIMA* ${formatCurrency(o.entregaMinima || 0)}\n\n`;
+    t += `*CAPITAL FINANCIADO (${o.entidad})* ${formatCurrency(o.montoFinanciado || 0)}\n`;
+    if (o.cuotas > 0 && o.montoCuota > 0) t += `${o.cuotas} cuotas de ${formatCurrency(o.montoCuota)}\n`;
+  });
+
+  t += `\n_Aviso: La transferencia se calcula sobre el mayor valor entre el precio de venta y el valor de tabla DNRPA. El importe es estimativo y puede variar según los costos y conceptos aplicables al momento de realizar la transferencia en el Registro Seccional correspondiente._\n`;
+  t += `_Presupuesto válido por 24 horas._\n\n`;
+  t += `${LINE}\n`;
+  t += `${ADVISOR_INFO.nombre} | ${ADVISOR_INFO.cargo}\n`;
+  t += `📞 ${ADVISOR_INFO.telefono}\n`;
+  t += `📍 ${ADVISOR_INFO.direccion}, ${ADVISOR_INFO.ciudad}, ${ADVISOR_INFO.provincia}, ${ADVISOR_INFO.pais}`;
+  return t;
+}
 
 const budgetsStore = new SyncedCollection<CommercialBudget>('budgets', 'autonet_saved_budgets_v1', {
   max: 300,
@@ -231,7 +312,9 @@ class QuoteService {
       alicuota,
       transferenciaEstimada,
       totalEstimado,
-      financiacion: financiacion?.llevaFinanciacion ? financiacion : undefined,
+      financiacion: financiacion?.llevaFinanciacion
+        ? { llevaFinanciacion: true, opciones: enrichFinancingOptions(financiacion.opciones, precioVenta, transferenciaEstimada) }
+        : undefined,
       datosCliente: {
         nombre: clientData?.nombre?.trim() || '',
         telefono: clientData?.telefono?.trim() || '',
@@ -264,45 +347,14 @@ class QuoteService {
    * Genera el texto simple, limpio y comercial para copiar y enviar por WhatsApp con firma fija.
    */
   public formatBudgetWhatsAppMessage(budget: CommercialBudget): string {
-    const v = budget.vehiculo;
-    const precioFormatted = formatCurrency(budget.precioVehiculo);
-    const transfFormatted = formatCurrency(budget.transferenciaEstimada);
-    const totalFormatted = formatCurrency(budget.totalEstimado);
-
-    const vehiculoTitulo = `${v.marca} ${v.modelo} ${v.version}`.trim();
-    const hasValidAutonetUrl = Boolean(v.urlAutonetOriginal && v.urlAutonetOriginal.startsWith('http'));
-
-    let text = `Hola! Te paso el presupuesto por el *${vehiculoTitulo}* (Año ${v.anio}):\n\n`;
-    text += `💰 *Precio de venta:* ${precioFormatted}\n`;
-    text += `📄 *Transferencia estimada:* ${transfFormatted}\n`;
-    text += `🏁 *Total estimado:* ${totalFormatted}\n\n`;
-
-    // Financiación si corresponde
-    if (budget.financiacion?.llevaFinanciacion && budget.financiacion.opciones.length > 0) {
-      text += `🏦 *OPCIONES DE FINANCIACIÓN:*\n`;
-      budget.financiacion.opciones.forEach((opc) => {
-        const cuotaFmt = formatCurrency(opc.montoCuota);
-        const detalleStr = opc.detalle ? ` (${opc.detalle})` : '';
-        text += `• *${opc.entidad}:* ${opc.cuotas} cuotas de ${cuotaFmt}${detalleStr}\n`;
-      });
-      text += `\n`;
-    }
-
-    text += `⏱️ _Presupuesto válido por 24 horas._\n`;
-
-    if (hasValidAutonetUrl) {
-      text += `🔗 *Ver fotos y ficha técnica acá:*\n${v.urlAutonetOriginal}\n\n`;
-    } else {
-      text += `\n`;
-    }
-
-    // Firma fija del Asesor
-    text += `━━━━━━━━━━━━━━━━━━━━━\n`;
-    text += `${ADVISOR_INFO.nombre} | ${ADVISOR_INFO.cargo}\n`;
-    text += `📞 ${ADVISOR_INFO.telefono}\n`;
-    text += `📍 ${ADVISOR_INFO.direccion}, ${ADVISOR_INFO.ciudad}, ${ADVISOR_INFO.provincia}, ${ADVISOR_INFO.pais}`;
-
-    return text;
+    return buildQuoteWhatsAppMessage({
+      vehiculo: budget.vehiculo,
+      provincia: budget.provincia,
+      precio: budget.precioVehiculo,
+      transferencia: budget.transferenciaEstimada,
+      total: budget.totalEstimado,
+      opciones: budget.financiacion?.opciones,
+    });
   }
 
   /**
