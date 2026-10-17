@@ -26,6 +26,7 @@ import { BoletoRecord } from './services/boletoHistoryService';
 import { appEvents } from './services/appEvents';
 import { usePersistentState } from './hooks/usePersistentState';
 import { getBudgetAlerts } from './utils/budgetAlerts';
+import { webCatalogService, mergeWebCatalog } from './services/webCatalogService';
 
 // Secciones pesadas: se cargan recién cuando se abren (la app inicia más rápido, sobre todo en el celular)
 const MySalesView = lazy(() => import('./components/MySalesView').then((m) => ({ default: m.MySalesView })));
@@ -81,7 +82,22 @@ const SectionLoader = () => (
 );
 
 export default function App() {
-  const [vehicles, setVehicles] = useState<Vehicle[]>(() => stockService.getAllVehicles());
+  const [rawVehicles, setVehicles] = useState<Vehicle[]>(() => stockService.getAllVehicles());
+  // Catálogo de la web de Autonet (fotos y publicaciones actualizadas por GitHub Actions)
+  const [webCatalog, setWebCatalog] = useState(() => webCatalogService.get());
+  useEffect(() => {
+    const unsub = webCatalogService.subscribe(setWebCatalog);
+    webCatalogService.refresh();
+    const onVisible = () => document.visibilityState === 'visible' && webCatalogService.refresh();
+    document.addEventListener('visibilitychange', onVisible);
+    const t = setInterval(() => webCatalogService.refresh(), 30 * 60 * 1000);
+    return () => {
+      unsub();
+      document.removeEventListener('visibilitychange', onVisible);
+      clearInterval(t);
+    };
+  }, []);
+  const vehicles = useMemo(() => mergeWebCatalog(rawVehicles, webCatalog), [rawVehicles, webCatalog]);
   const [currentTab, setCurrentTab] = useState<NavTab>(tabFromHash);
   const [filters, setFilters] = useState<StockFilters>(DEFAULT_FILTERS);
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
@@ -377,7 +393,7 @@ export default function App() {
 
               {currentTab === 'boletos' && <BoletosView onReopen={reopenBoleto} onToast={showToast} />}
 
-              {currentTab === 'publicidad' && <StoriesView vehicles={vehicles} onToast={showToast} />}
+              {currentTab === 'publicidad' && <StoriesView vehicles={vehicles} webCatalog={webCatalog} onToast={showToast} />}
 
               {currentTab === 'actualizar' && (
                 <UpdateStockView

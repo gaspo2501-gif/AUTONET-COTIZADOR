@@ -1,5 +1,6 @@
 import React from 'react';
-import { Megaphone, Search, Download, ImagePlus, Globe, CheckCircle2, TrendingDown, Sparkles, Clock, Loader2, X, Undo2 } from 'lucide-react';
+import { Megaphone, Search, Download, ImagePlus, Globe, CheckCircle2, TrendingDown, Sparkles, Clock, Loader2, X, Undo2, RefreshCw, AlertTriangle } from 'lucide-react';
+import { WebCatalog, WebCatalogVehicle, webCatalogService, webOnlyVehicles } from '../../services/webCatalogService';
 import { Vehicle, UpdateHistoryRecord } from '../../types/stock';
 import { stockService } from '../../services/stockService';
 import { publicationsService } from '../../services/publicationsService';
@@ -12,10 +13,11 @@ import { formatCurrency } from '../../utils/formatters';
 import { MoneyInput } from '../stock/FilterPanel';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
 
-type Tab = 'novedades' | 'precio' | 'pendientes' | 'todas';
+type Tab = 'novedades' | 'precio' | 'pendientes' | 'web' | 'todas';
 
 interface Props {
   vehicles: Vehicle[];
+  webCatalog?: WebCatalog | null;
   onToast: (t: string, type?: 'success' | 'info' | 'warn') => void;
 }
 
@@ -32,13 +34,31 @@ async function downloadBlob(blob: Blob, name: string) {
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
-export const StoriesView: React.FC<Props> = ({ vehicles, onToast }) => {
+export const StoriesView: React.FC<Props> = ({ vehicles, webCatalog = null, onToast }) => {
   const [history, setHistory] = React.useState<UpdateHistoryRecord[]>(() => stockService.getUpdateHistory());
   React.useEffect(() => stockService.subscribeHistory(setHistory), []);
   const [pubs, setPubs] = React.useState(() => publicationsService.getMap());
   React.useEffect(() => publicationsService.subscribe(() => setPubs(publicationsService.getMap())), []);
 
-  const { drops, nuevos } = React.useMemo(() => getStockInsights(history), [history]);
+  const { drops, nuevos } = React.useMemo(() => {
+    const ins = getStockInsights(history);
+    // Sumar lo que detecta la web de Autonet: unidades nuevas (7 días) y bajas de precio (14 días)
+    if (webCatalog) {
+      const now = Date.now();
+      (Object.values(webCatalog.vehicles) as WebCatalogVehicle[]).forEach((w) => {
+        if (w.firstSeen && now - Date.parse(w.firstSeen) <= 7 * 86_400_000 && !ins.nuevos.has(w.plate)) ins.nuevos.set(w.plate, w.firstSeen);
+        if (
+          w.precioAnteriorWeb && w.precioPublicadoWeb && w.precioAnteriorWeb > w.precioPublicadoWeb &&
+          w.cambioPrecioEl && now - Date.parse(w.cambioPrecioEl) <= 14 * 86_400_000 && !ins.drops.has(w.plate)
+        ) {
+          ins.drops.set(w.plate, { oldPrice: w.precioAnteriorWeb, newPrice: w.precioPublicadoWeb, fecha: w.cambioPrecioEl });
+        }
+      });
+    }
+    return ins;
+  }, [history, webCatalog]);
+  const webOnly = React.useMemo(() => webOnlyVehicles(vehicles, webCatalog), [vehicles, webCatalog]);
+  const [refreshing, setRefreshing] = React.useState(false);
   const available = React.useMemo(() => vehicles.filter(isAvailableVehicle), [vehicles]);
 
   const lists = React.useMemo(() => {
@@ -49,8 +69,9 @@ export const StoriesView: React.FC<Props> = ({ vehicles, onToast }) => {
       const d = daysSince(p?.ultimaVez);
       return d === null || d >= 15;
     });
-    return { novedades, precio, pendientes, todas: available };
-  }, [available, nuevos, drops, pubs]);
+    const webNuevas = webOnly.filter((v) => nuevos.has(normalizePatent(v.patente)));
+    return { novedades: [...novedades, ...webNuevas], precio, pendientes, web: webOnly, todas: available };
+  }, [available, nuevos, drops, pubs, webOnly]);
 
   const [tab, setTab] = React.useState<Tab>(() => (lists.novedades.length ? 'novedades' : lists.precio.length ? 'precio' : 'pendientes'));
   const [q, setQ] = React.useState('');
@@ -61,7 +82,8 @@ export const StoriesView: React.FC<Props> = ({ vehicles, onToast }) => {
   const shown = React.useMemo(() => (q.trim() ? lists[tab].filter((v) => matchesSearch(v, q)) : lists[tab]), [lists, tab, q]);
 
   React.useEffect(() => {
-    if (!selected && shown[0]) setSelected(shown[0]);
+    const stillThere = selected && shown.some((v) => normalizePatent(v.patente) === normalizePatent(selected.patente));
+    if (!stillThere && shown[0]) setSelected(shown[0]);
   }, [shown, selected]);
 
   // ---------- Editor ----------
@@ -198,6 +220,7 @@ export const StoriesView: React.FC<Props> = ({ vehicles, onToast }) => {
     { key: 'novedades', label: 'Novedades', icon: <Sparkles className="w-3.5 h-3.5" />, hint: 'Ingresaron en los últimos 30 días' },
     { key: 'precio', label: 'Bajaron de precio', icon: <TrendingDown className="w-3.5 h-3.5" />, hint: 'Según las últimas importaciones del PDF' },
     { key: 'pendientes', label: 'Sin publicar', icon: <Clock className="w-3.5 h-3.5" />, hint: 'Nunca publicadas o hace 15 días o más' },
+    { key: 'web', label: 'Solo en la web', icon: <Globe className="w-3.5 h-3.5" />, hint: 'Publicadas en autonet.com.ar que todavía no están en tu PDF de stock' },
     { key: 'todas', label: 'Todas', icon: <Megaphone className="w-3.5 h-3.5" />, hint: 'Todo el stock disponible' },
   ];
 
@@ -210,8 +233,53 @@ export const StoriesView: React.FC<Props> = ({ vehicles, onToast }) => {
       </div>
       <p className="text-[13px] text-slate-500 -mt-2 lg:mt-0">Historias 1080×1920 para Instagram y estados de WhatsApp, con los datos de la unidad completos.</p>
 
+      {/* Estado de la sincronización con autonet.com.ar */}
+      {(() => {
+        const hours = webCatalog ? (Date.now() - Date.parse(webCatalog.generatedAt)) / 3_600_000 : null;
+        const old = hours === null || hours > 26 || webCatalog?.stale;
+        const ago =
+          hours === null ? '' : hours < 1 ? 'hace menos de 1 hora' : hours < 24 ? `hace ${Math.floor(hours)} h` : `hace ${Math.floor(hours / 24)} día${hours >= 48 ? 's' : ''}`;
+        return (
+          <div
+            className={`flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3.5 py-2.5 rounded-xl border text-[12.5px] ${
+              old ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-white border-slate-200 text-slate-600'
+            }`}
+          >
+            {old ? <AlertTriangle className="w-4 h-4 text-amber-600" /> : <Globe className="w-4 h-4 text-emerald-600" />}
+            {webCatalog ? (
+              <span>
+                Web de Autonet leída <strong className="text-slate-900">{ago}</strong> · {webCatalog.total} unidades publicadas · {webCatalog.conFoto} con foto
+                {lists.web.length > 0 && (
+                  <>
+                    {' '}
+                    ·{' '}
+                    <button type="button" onClick={() => setTab('web')} className="font-bold text-action-700 hover:underline">
+                      {lists.web.length} todavía no están en tu stock
+                    </button>
+                  </>
+                )}
+              </span>
+            ) : (
+              <span>Todavía no hay datos de la web de Autonet. Se cargan solos después de la próxima publicación automática.</span>
+            )}
+            <button
+              type="button"
+              onClick={async () => {
+                setRefreshing(true);
+                const c = await webCatalogService.refresh();
+                setRefreshing(false);
+                onToast(c ? 'Datos de la web actualizados.' : 'Todavía no hay catálogo publicado.', c ? 'success' : 'info');
+              }}
+              className="ml-auto inline-flex items-center gap-1 text-[12px] font-bold text-action-700 hover:underline"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} /> Revisar ahora
+            </button>
+          </div>
+        );
+      })()}
+
       <div className="flex gap-1.5 overflow-x-auto scrollbar-none -mx-4 px-4 sm:mx-0 sm:px-0">
-        {TABS.map((t) => (
+        {TABS.filter((t) => t.key !== 'web' || lists.web.length > 0).map((t) => (
           <button
             key={t.key}
             type="button"
