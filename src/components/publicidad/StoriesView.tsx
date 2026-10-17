@@ -1,6 +1,6 @@
 import React from 'react';
 import { Megaphone, Search, Download, ImagePlus, Globe, CheckCircle2, TrendingDown, Sparkles, Clock, Loader2, X, Undo2, RefreshCw, AlertTriangle } from 'lucide-react';
-import { WebCatalog, WebCatalogVehicle, webCatalogService, webOnlyVehicles } from '../../services/webCatalogService';
+import { WebCatalog, WebCatalogVehicle, webCatalogService, webOnlyVehicles, matchWebCatalog, webPatente } from '../../services/webCatalogService';
 import { Vehicle, UpdateHistoryRecord } from '../../types/stock';
 import { stockService } from '../../services/stockService';
 import { publicationsService } from '../../services/publicationsService';
@@ -45,18 +45,20 @@ export const StoriesView: React.FC<Props> = ({ vehicles, webCatalog = null, onTo
     // Sumar lo que detecta la web de Autonet: unidades nuevas (7 días) y bajas de precio (14 días)
     if (webCatalog) {
       const now = Date.now();
-      (Object.values(webCatalog.vehicles) as WebCatalogVehicle[]).forEach((w) => {
-        if (w.firstSeen && now - Date.parse(w.firstSeen) <= 7 * 86_400_000 && !ins.nuevos.has(w.plate)) ins.nuevos.set(w.plate, w.firstSeen);
+      const { byPlate, unmatched } = matchWebCatalog(vehicles, webCatalog);
+      const pairs: [string, WebCatalogVehicle][] = [...byPlate.entries(), ...unmatched.map((w) => [normalizePatent(webPatente(w)), w] as [string, WebCatalogVehicle])];
+      pairs.forEach(([plate, w]) => {
+        if (w.firstSeen && now - Date.parse(w.firstSeen) <= 7 * 86_400_000 && !ins.nuevos.has(plate)) ins.nuevos.set(plate, w.firstSeen);
         if (
           w.precioAnteriorWeb && w.precioPublicadoWeb && w.precioAnteriorWeb > w.precioPublicadoWeb &&
-          w.cambioPrecioEl && now - Date.parse(w.cambioPrecioEl) <= 14 * 86_400_000 && !ins.drops.has(w.plate)
+          w.cambioPrecioEl && now - Date.parse(w.cambioPrecioEl) <= 14 * 86_400_000 && !ins.drops.has(plate)
         ) {
-          ins.drops.set(w.plate, { oldPrice: w.precioAnteriorWeb, newPrice: w.precioPublicadoWeb, fecha: w.cambioPrecioEl });
+          ins.drops.set(plate, { oldPrice: w.precioAnteriorWeb, newPrice: w.precioPublicadoWeb, fecha: w.cambioPrecioEl });
         }
       });
     }
     return ins;
-  }, [history, webCatalog]);
+  }, [history, webCatalog, vehicles]);
   const webOnly = React.useMemo(() => webOnlyVehicles(vehicles, webCatalog), [vehicles, webCatalog]);
   const [refreshing, setRefreshing] = React.useState(false);
   const available = React.useMemo(() => vehicles.filter(isAvailableVehicle), [vehicles]);
@@ -237,6 +239,13 @@ export const StoriesView: React.FC<Props> = ({ vehicles, webCatalog = null, onTo
       {(() => {
         const hours = webCatalog ? (Date.now() - Date.parse(webCatalog.generatedAt)) / 3_600_000 : null;
         const old = hours === null || hours > 26 || webCatalog?.stale;
+        // Lecturas automáticas: 8:15, 12:15, 16:15 y 20:15 (hora Argentina)
+        const nextRun = (() => {
+          const d = new Date();
+          const mins = d.getHours() * 60 + d.getMinutes();
+          const slot = [8, 12, 16, 20].map((h) => h * 60 + 15).find((m) => m > mins + 5);
+          return slot ? `${Math.floor(slot / 60)}:15` : 'mañana 8:15';
+        })();
         const ago =
           hours === null ? '' : hours < 1 ? 'hace menos de 1 hora' : hours < 24 ? `hace ${Math.floor(hours)} h` : `hace ${Math.floor(hours / 24)} día${hours >= 48 ? 's' : ''}`;
         return (
@@ -248,7 +257,7 @@ export const StoriesView: React.FC<Props> = ({ vehicles, webCatalog = null, onTo
             {old ? <AlertTriangle className="w-4 h-4 text-amber-600" /> : <Globe className="w-4 h-4 text-emerald-600" />}
             {webCatalog ? (
               <span>
-                Web de Autonet leída <strong className="text-slate-900">{ago}</strong> · {webCatalog.total} unidades publicadas · {webCatalog.conFoto} con foto
+                Web de Autonet leída <strong className="text-slate-900">{ago}</strong> · {webCatalog.total} unidades publicadas · {webCatalog.conFoto} con foto · próxima lectura {nextRun}
                 {lists.web.length > 0 && (
                   <>
                     {' '}
@@ -268,11 +277,16 @@ export const StoriesView: React.FC<Props> = ({ vehicles, webCatalog = null, onTo
                 setRefreshing(true);
                 const c = await webCatalogService.refresh();
                 setRefreshing(false);
-                onToast(c ? 'Datos de la web actualizados.' : 'Todavía no hay catálogo publicado.', c ? 'success' : 'info');
+                onToast(
+                  c
+                    ? `Datos recargados (lectura de la web de las ${new Date(c.generatedAt).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}). Para leer la web ya: GitHub → Actions → Run workflow.`
+                    : 'Todavía no hay catálogo publicado.',
+                  c ? 'success' : 'info'
+                );
               }}
               className="ml-auto inline-flex items-center gap-1 text-[12px] font-bold text-action-700 hover:underline"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} /> Revisar ahora
+              <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} /> Recargar datos
             </button>
           </div>
         );

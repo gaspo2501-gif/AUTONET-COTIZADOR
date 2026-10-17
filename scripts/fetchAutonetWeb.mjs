@@ -27,6 +27,24 @@ const PAGE = 50;
 
 const log = (...a) => console.log('[autonet-web]', ...a);
 const normPlate = (p) => String(p || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+const PLATE_RE = /^([A-Z]{2}\d{3}[A-Z]{2}|[A-Z]{3}\d{3}|[A-Z]\d{3}[A-Z]{3}|\d{3}[A-Z]{3})$/;
+const PLATE_KEYS = ['plate', 'domain', 'dominio', 'patente', 'licensePlate', 'licencePlate', 'registration', 'registrationNumber'];
+
+/** Busca la patente en los campos conocidos (la web a veces no la manda en el listado). */
+function findPlate(obj) {
+  if (!obj || typeof obj !== 'object') return '';
+  for (const k of PLATE_KEYS) {
+    const p = normPlate(obj[k]);
+    if (PLATE_RE.test(p)) return p;
+  }
+  for (const [k, val] of Object.entries(obj)) {
+    if (typeof val === 'string' && /plate|domin|patent/i.test(k)) {
+      const p = normPlate(val);
+      if (PLATE_RE.test(p)) return p;
+    }
+  }
+  return '';
+}
 
 async function getJson(url, tries = 3) {
   for (let i = 1; i <= tries; i++) {
@@ -98,8 +116,20 @@ async function main() {
   const now = new Date().toISOString();
   const hasPrevious = Object.keys(previous).length > 0;
 
+  // Diagnóstico para el registro de GitHub Actions
+  if (vehicles[0]) log('Campos que envía la web:', Object.keys(vehicles[0]).join(', '));
+
   const items = await pool(vehicles, 6, async (v) => {
-    const plate = normPlate(v.plate);
+    let plate = findPlate(v);
+    if (!plate && v.id) {
+      // Segundo intento: ficha completa de la unidad
+      try {
+        const det = await getJson(`${API}/vehicles/${v.id}`, 2);
+        plate = findPlate(det?.data || det);
+      } catch {
+        /* sin ficha: se identifica por marca, modelo, año y km */
+      }
+    }
     let fotos = [];
     if (v.mainPicture?.url) fotos.push(v.mainPicture.url);
     try {
@@ -111,34 +141,37 @@ async function main() {
     }
 
     let fotoLocal;
-    if (plate && fotos[0]) {
+    const fileKey = plate || `ID-${String(v.id).replace(/[^A-Za-z0-9-]/g, '')}`;
+    if (fotos[0]) {
       try {
         const res = await fetch(fotos[0], { headers: { Referer: 'https://autonet.com.ar/' }, signal: AbortSignal.timeout(25000) });
         if (res.ok) {
           const buf = Buffer.from(await res.arrayBuffer());
-          const file = path.join(PHOTO_DIR, `${plate}.jpg`);
+          const file = path.join(PHOTO_DIR, `${fileKey}.jpg`);
           if (sharp) {
             await sharp(buf).rotate().resize({ width: 1080, withoutEnlargement: true }).jpeg({ quality: 82, mozjpeg: true }).toFile(file);
           } else {
             fs.writeFileSync(file, buf);
           }
-          fotoLocal = `autonet-web/fotos/${plate}.jpg`;
+          fotoLocal = `autonet-web/fotos/${fileKey}.jpg`;
         }
       } catch {
         /* se usa la URL remota */
       }
     }
 
-    const prev = plate ? previous[plate] : undefined;
-    const precio = Number(v.advertisedPrice) || undefined;
+    const prev = previous[fileKey];
+    const precio =
+      Math.round(Number(String(v.advertisedPrice ?? '').replace(/[^\d.,]/g, '').replace(/[.,](?=\d{3}(\D|$))/g, '').replace(',', '.'))) || undefined;
     return {
+      key: fileKey,
       plate,
       autonetId: v.id,
       brand: v.brand,
       model: v.model,
       version: v.version,
       year: Number(v.year) || undefined,
-      km: Number(v.km) || 0,
+      km: Number(String(v.km ?? '').replace(/\D/g, '')) || 0,
       precioPublicadoWeb: precio,
       moneda: v.currencyAdvertisedPrice?.isocode || 'ARS',
       urlAutonetOriginal: `https://autonet.com.ar/vehicle/${v.id}`,
@@ -154,7 +187,9 @@ async function main() {
   });
 
   const map = {};
-  for (const it of items) if (it?.plate) map[it.plate] = it;
+  for (const it of items) if (it?.key) map[it.key] = it;
+  const conPatente = Object.values(map).filter((v) => v.plate).length;
+  log(`Unidades con patente: ${conPatente} de ${Object.keys(map).length} (el resto se reconoce por marca, modelo, año y km).`);
 
   const catalog = {
     generatedAt: now,
