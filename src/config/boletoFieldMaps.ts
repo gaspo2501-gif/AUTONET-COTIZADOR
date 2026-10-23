@@ -55,6 +55,8 @@ export const COMMON_BOLETO_FIELDS: BoletoFieldMapping = {
 
   // Gestoría
   gestoriaPatentamiento: 'undefined_9', // Patentamiento con transferencia calculada
+  gestoriaGastoCrediticio: 'undefined_6', // Gasto crediticio (BBVA / Santander / Galicia)
+  gestoriaPrenda: 'undefined_7', // Prenda (BBVA / Santander / Galicia)
 
   // Unidad adquirida
   unidadModelo: 'Modelo',

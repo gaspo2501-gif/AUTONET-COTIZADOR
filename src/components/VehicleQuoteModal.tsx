@@ -13,11 +13,12 @@ import {
   CreditCard,
   Plus,
   Trash2,
-  FileCheck2
+  FileCheck2,
+  Repeat
 } from 'lucide-react';
 import { Vehicle, ProvinceTransfer } from '../types/stock';
 import { dnrpaService } from '../services/dnrpaService';
-import { CommercialBudget, FinancingOption, quoteService, buildQuoteWhatsAppMessage, enrichFinancingOptions } from '../services/quoteService';
+import { CommercialBudget, FinancingOption, quoteService, buildQuoteWhatsAppMessage, enrichFinancingOptions, TradeIn, tradeInLabel } from '../services/quoteService';
 import { financingService, calcFinancing, FinancingEntity } from '../services/financingService';
 import { whatsappLink } from '../services/messageTemplates';
 import { formatCurrency } from '../utils/formatters';
@@ -58,6 +59,15 @@ export const VehicleQuoteModal: React.FC<VehicleQuoteModalProps> = ({
   const [opcionesFinanciacion, setOpcionesFinanciacion] = useState<FinancingOption[]>([
     { id: 'opc-1', entidad: 'CREDINET', montoFinanciado: 0, cuotas: 0, montoCuota: 0, detalle: '' },
   ]);
+  // 4. Toma de usado (se descuenta de la entrega mínima)
+  const [entregaUsado, setEntregaUsado] = useState(false);
+  const [tomaModelo, setTomaModelo] = useState('');
+  const [tomaAnio, setTomaAnio] = useState('');
+  const [tomaValor, setTomaValor] = useState(0);
+  const tomaUsado: TradeIn | null =
+    entregaUsado && tomaValor > 0 ? { valor: tomaValor, modelo: tomaModelo.trim() || undefined, anio: Number(tomaAnio) || undefined } : null;
+  const tomaMonto = tomaUsado?.valor || 0;
+
   const [entities, setEntities] = useState<FinancingEntity[]>(() => financingService.getEntities());
   const [finSettings, setFinSettings] = useState(() => financingService.getSettings());
   React.useEffect(
@@ -153,6 +163,7 @@ export const VehicleQuoteModal: React.FC<VehicleQuoteModalProps> = ({
             opciones: validOptions,
           }
         : undefined,
+      tomaUsado,
     });
 
     if (onOpenBudget) {
@@ -176,17 +187,18 @@ export const VehicleQuoteModal: React.FC<VehicleQuoteModalProps> = ({
                   opciones: opcionesFinanciacion.filter((o) => (o.montoFinanciado || 0) > 0),
                 }
               : undefined,
+            tomaUsado,
           })
         : null,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [isBoletoOpen, vehicle, parsedTableValue, province, llevaFinanciacion, opcionesFinanciacion]
+    [isBoletoOpen, vehicle, parsedTableValue, province, llevaFinanciacion, opcionesFinanciacion, tomaMonto, tomaModelo, tomaAnio]
   );
 
   // Alternativas con gastos y entrega mínima calculados
   const enrichedOptions = React.useMemo(
-    () => (llevaFinanciacion ? enrichFinancingOptions(opcionesFinanciacion, vehiclePrice, transferenciaEstimada) : []),
+    () => (llevaFinanciacion ? enrichFinancingOptions(opcionesFinanciacion, vehiclePrice, transferenciaEstimada, tomaMonto) : []),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [llevaFinanciacion, opcionesFinanciacion, vehiclePrice, transferenciaEstimada, entities, finSettings]
+    [llevaFinanciacion, opcionesFinanciacion, vehiclePrice, transferenciaEstimada, tomaMonto, entities, finSettings]
   );
 
   const shareText = buildQuoteWhatsAppMessage({
@@ -196,6 +208,7 @@ export const VehicleQuoteModal: React.FC<VehicleQuoteModalProps> = ({
     transferencia: transferenciaEstimada,
     total: totalOperacion,
     opciones: enrichedOptions,
+    tomaUsado,
   });
 
   // Copiar resumen al portapapeles para WhatsApp con firma fija del asesor
@@ -445,6 +458,80 @@ export const VehicleQuoteModal: React.FC<VehicleQuoteModalProps> = ({
               </div>
             )}
 
+            {/* 5b. TOMA DE USADO: se descuenta de la entrega mínima */}
+            <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 text-xs space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Repeat className="w-4 h-4 text-amber-600" />
+                  <span className="font-extrabold text-slate-800 uppercase tracking-wider">¿ENTREGA USADO?</span>
+                </div>
+                <div className="inline-flex rounded-lg p-0.5 bg-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => setEntregaUsado(false)}
+                    className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${!entregaUsado ? 'bg-slate-800 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+                  >
+                    NO
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEntregaUsado(true)}
+                    className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${entregaUsado ? 'bg-amber-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+                  >
+                    SÍ
+                  </button>
+                </div>
+              </div>
+              {entregaUsado && (
+                <div className="pt-3 border-t border-slate-200 space-y-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-[1fr_90px_1fr] gap-2">
+                    <label className="block">
+                      <span className="block text-[10px] font-bold text-slate-600 mb-0.5 uppercase">Marca y modelo</span>
+                      <input
+                        type="text"
+                        value={tomaModelo}
+                        onChange={(e) => setTomaModelo(e.target.value)}
+                        placeholder="Ej. Ford Ka SE"
+                        className="w-full px-2.5 py-2 rounded-lg border border-slate-300 text-sm font-bold uppercase text-slate-900"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="block text-[10px] font-bold text-slate-600 mb-0.5 uppercase">Año</span>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={tomaAnio}
+                        onChange={(e) => setTomaAnio(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                        placeholder="2017"
+                        className="w-full px-2.5 py-2 rounded-lg border border-slate-300 text-sm font-mono font-bold text-slate-900"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="block text-[10px] font-bold text-slate-600 mb-0.5 uppercase">Valor de toma</span>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={tomaValor > 0 ? new Intl.NumberFormat('es-AR').format(tomaValor) : ''}
+                        onChange={(e) => {
+                          const raw = e.target.value.replace(/\D/g, '');
+                          setTomaValor(raw ? Number(raw) : 0);
+                        }}
+                        placeholder="Ej. 9.000.000"
+                        className="w-full px-2.5 py-2 rounded-lg border border-slate-300 text-sm font-mono font-bold text-slate-900"
+                      />
+                    </label>
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    {tomaMonto > 0
+                      ? llevaFinanciacion
+                        ? `Se descuenta ${formatCurrency(tomaMonto)} de la entrega mínima de cada opción.`
+                        : `Saldo a abonar: ${formatCurrency(Math.max(0, totalOperacion - tomaMonto))} (total − toma).`
+                      : 'Cargá el valor de toma para descontarlo de la entrega mínima.'}
+                  </p>
+                </div>
+              )}
+            </div>
+
             {/* 6. MÓDULO DE FINANCIACIÓN MANUAL (Requisito Clave) */}
             <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 text-xs space-y-3">
               <div className="flex items-center justify-between">
@@ -498,6 +585,7 @@ export const VehicleQuoteModal: React.FC<VehicleQuoteModalProps> = ({
                       valorCuota: opc.montoCuota,
                       entity,
                       redondeo: finSettings.redondeoEntrega,
+                      tomaUsado: tomaMonto,
                     });
                     const money = (n: number) => (n > 0 ? new Intl.NumberFormat('es-AR').format(n) : '');
                     return (
@@ -599,6 +687,12 @@ export const VehicleQuoteModal: React.FC<VehicleQuoteModalProps> = ({
                                   <span className="font-mono">{r.faltanDatosPrenda ? 'faltan cuotas' : `+ ${formatCurrency(r.prenda)}`}</span>
                                 </div>
                               </>
+                            )}
+                            {tomaMonto > 0 && (
+                              <div className="flex justify-between text-slate-300">
+                                <span>{tradeInLabel(tomaUsado)}</span>
+                                <span className="font-mono">− {formatCurrency(tomaMonto)}</span>
+                              </div>
                             )}
                             <div className="flex justify-between text-slate-300">
                               <span>Capital financiado</span>

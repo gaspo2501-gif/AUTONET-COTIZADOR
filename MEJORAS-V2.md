@@ -1,5 +1,57 @@
 # Autonet Cotizador — Versión 2
 
+## Quinta etapa: toma de usado, gestoría del boleto y planilla UIF de Credinet
+
+### Toma de usado en los presupuestos
+- En el cotizador, nuevo bloque **¿ENTREGA USADO?** con marca/modelo, año y valor de toma.
+- El valor de toma **se descuenta de la entrega mínima** de cada opción de financiación.
+- Se muestra como "TOMA DE USADO (MODELO AÑO) $ X" en el mensaje de WhatsApp, en el presupuesto A4 y en el historial. Si no hay financiación, se muestra además el saldo a abonar.
+- Al generar el boleto desde el presupuesto, la sección "Usado entregado" ya viene completa.
+
+### Boleto: sección GESTORÍA
+- PATENTAMIENTO = valor de la transferencia, impreso como "833.000 (TRANSFERENCIA)".
+- GASTO CREDITICIO y PRENDA solo se imprimen cuando hay una financiación activa de BBVA, SANTANDER o GALICIA (se completan solos con los gastos calculados; botón para recalcular).
+- El TOTAL de gestoría es la suma de los ítems de la sección (ya no repite el total de la operación).
+- El TOTAL de FORMAS DE PAGO no cambia.
+
+### Planilla UIF (Res. 200/2024) – solo Credinet
+- Cuando el boleto tiene una financiación activa de CREDINET aparece la sección "Planilla UIF" con los datos que faltan (lugar de nacimiento, sexo, contacto de referencia, empresa, cargo, fechas, datos laborales) y el botón **Descargar planilla UIF** (también en el pie del boleto).
+- Se completa el PDF original de Credinet (`public/templates/UIF_CREDINET.pdf`), no un documento nuevo. Nacionalidad y país: Argentina; fecha de confección: hoy; en PEP y Sujeto Obligado el "SI" sale tachado con una cruz y el nombre del cliente en "Quien suscribe".
+- Calle y número se separan solos del domicilio (se pueden corregir).
+
+Archivos: `services/uifPdfService.ts`, `components/boleto/UifSection.tsx` (nuevos), `public/templates/UIF_CREDINET.pdf` (nuevo); cambios en `services/financingService.ts`, `services/quoteService.ts`, `services/boletoPdfService.ts`, `config/boletoFieldMaps.ts`, `types/boleto.ts`, `components/VehicleQuoteModal.tsx`, `components/QuoteDocument.tsx`, `components/BudgetModal.tsx`, `components/presupuestos/BudgetsView.tsx`, `components/boleto/BoletoForm.tsx`, `components/boleto/BoletoModal.tsx`, `App.tsx`.
+
+## Cuarta etapa: fotos y publicaciones automáticas desde autonet.com.ar
+
+- GitHub Actions lee la web de Autonet **4 veces por día** (8:15, 12:15, 16:15 y 20:15, hora Argentina) y en cada publicación de la app:
+  - todas las unidades publicadas, con su link, precio web y galería;
+  - la **foto principal de cada unidad**, achicada a 1080 px y guardada junto a la app (así las historias se descargan sin tener que subir la foto);
+  - qué unidades aparecieron nuevas en la web y cuáles bajaron de precio.
+- La app lee ese catálogo al abrirse, al volver a la pestaña y cada 30 minutos. No toca Firebase: solo superpone fotos, link y precio web al stock.
+- Publicidad:
+  - Banner con la última lectura de la web ("hace 2 h · 150 publicadas · 140 con foto") y botón "Revisar ahora".
+  - **Novedades** y **Bajaron de precio** ahora también se alimentan de la web (no solo del PDF).
+  - Nueva lista **Solo en la web**: unidades publicadas en autonet.com.ar que todavía no están en tu PDF de stock; se pueden publicar igual.
+- Si la web no responde, la publicación sigue y se mantiene el último catálogo.
+- Para forzar una lectura en el momento: GitHub → Actions → "Deploy to GitHub Pages" → **Run workflow**.
+- Archivos: `scripts/fetchAutonetWeb.mjs` (lectura de la web), `src/services/webCatalogService.ts` (uso en la app) y `.github/workflows/deploy.yml` (horarios).
+
+
+## Tercera etapa: financiación y entrega mínima
+
+- En la cotización, cada alternativa de financiación tiene: entidad, **monto a prestar**, cuotas y valor de cuota (los datos del simulador del banco).
+- La app calcula la **entrega mínima** de cada entidad:
+  - Sin gastos (CREDINET, BNA, BPN): auto + transferencia − monto prestado.
+  - Con gastos (SANTANDER, BBVA, GALICIA): auto + transferencia + otorgamiento (4,83 % del monto) + inscripción de prenda (3 % de cuotas × valor de cuota) − monto prestado.
+  - Redondeo hacia arriba configurable (por defecto a $10.000, como en el mensaje modelo).
+- Se pueden cargar varias entidades a la vez para comparar entregas.
+- **Mensaje de WhatsApp con tu formato nuevo**: vehículo, precio, transferencia, total, y por cada entidad la entrega mínima y el capital financiado (y los gastos y cuotas cuando corresponden). Botones "Copiar WhatsApp" y "Abrir en WhatsApp".
+- El presupuesto A4 muestra una tabla con capital, plazo, gastos del crédito y entrega mínima por entidad.
+- En Presupuestos se ve la entrega mínima de cada entidad en cada presupuesto.
+- Configuración → **Entidades de financiación**: marcar cada entidad con o sin gastos, cambiar los porcentajes, agregar o quitar entidades y elegir el redondeo. Se sincroniza entre PC y celular.
+- El boleto toma el monto financiado real de la cotización (antes ponía el 50 % del precio por defecto).
+
+
 ## Segunda etapa (piloto)
 
 ### Boletos

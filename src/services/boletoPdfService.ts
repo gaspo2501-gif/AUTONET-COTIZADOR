@@ -8,6 +8,17 @@ import {
 } from '../types/boleto';
 import { BOLETO_TEMPLATES_CONFIG, AUTHORIZED_TEMPLATES_DATA } from '../config/boletoTemplates';
 
+/** Bancos cuyos gastos (crédito y prenda) van en la sección GESTORÍA del boleto. */
+export const GESTORIA_BANKS = ['BBVA', 'SANTANDER', 'GALICIA'];
+export const isBankWithCosts = (entidad?: string) => {
+  const e = String(entidad || '').toUpperCase();
+  return GESTORIA_BANKS.some((b) => e.includes(b));
+};
+export const hasBankWithCosts = (data: BoletoData) =>
+  (data.operacion.financiaciones || []).some((f) => f.activo && isBankWithCosts(f.entidad));
+export const hasCredinet = (data: BoletoData) =>
+  (data.operacion.financiaciones || []).some((f) => f.activo && String(f.entidad || '').toUpperCase().includes('CREDINET'));
+
 /**
  * Cache en memoria de plantillas limpias cargadas (para evitar fetch repetitivo)
  */
@@ -312,6 +323,27 @@ export class BoletoPdfService {
    * Formatea un número como dinero argentino sin el símbolo '$'
    * (porque el boleto ya tiene '$' preimpreso)
    */
+  /**
+   * Valores de la sección GESTORÍA del boleto.
+   * - PATENTAMIENTO = transferencia, siempre acompañada de la palabra TRANSFERENCIA.
+   * - GASTO CREDITICIO y PRENDA solo si hay una financiación activa de BBVA, SANTANDER o GALICIA.
+   * - TOTAL = suma de todos los ítems de la sección.
+   */
+  gestoriaValues(data: BoletoData): { patentamiento: string; gastoCrediticio: string; prenda: string; total: string } {
+    const n = (v?: number) => (v && v > 0 && !isNaN(v) ? Math.round(v) : 0);
+    const banco = hasBankWithCosts(data);
+    const transf = n(data.operacion.patentamiento);
+    const credito = banco ? n(data.operacion.gastoCrediticio) : 0;
+    const prenda = banco ? n(data.operacion.gastoPrenda) : 0;
+    const total = transf + credito + prenda;
+    return {
+      patentamiento: transf ? `${this.formatMoneyForPdf(transf)} (TRANSFERENCIA)` : '',
+      gastoCrediticio: this.formatMoneyForPdf(credito),
+      prenda: this.formatMoneyForPdf(prenda),
+      total: this.formatMoneyForPdf(total),
+    };
+  }
+
   formatMoneyForPdf(amount?: number | null): string {
     if (amount === undefined || amount === null || amount === 0 || isNaN(amount)) {
       return '';
@@ -562,11 +594,7 @@ export class BoletoPdfService {
     // toman ambos exclusivamente el valor de totalOperacion.
     // Si totalOperacion no existe o es <= 0, ambos campos deben quedar vacíos.
     if (data.operacion.totalOperacion && data.operacion.totalOperacion > 0) {
-      const totalFormatted = this.formatMoneyForPdf(data.operacion.totalOperacion);
-      drawTextInField(map.operacionTotalPrimario, totalFormatted);
-      if (map.operacionTotalSecundario) {
-        drawTextInField(map.operacionTotalSecundario, totalFormatted);
-      }
+      drawTextInField(map.operacionTotalPrimario, this.formatMoneyForPdf(data.operacion.totalOperacion));
     }
 
     // Financiaciones en las filas de Cheque c/Bco (Text28/Text20 a Text33/Text25)
@@ -634,8 +662,13 @@ export class BoletoPdfService {
     // 5. GESTORÍA -> PATENTAMIENTO (Valor de transferencia calculada)
     // Se completa con el valor de transferencia de la cotización actual, formateado con separador de miles.
     // Si no existe valor o es <= 0, se deja estrictamente vacío (NO poner 0).
-    if (data.operacion.patentamiento && data.operacion.patentamiento > 0) {
-      drawTextInField(map.gestoriaPatentamiento || 'undefined_9', this.formatMoneyForPdf(data.operacion.patentamiento));
+    // GASTO CREDITICIO y PRENDA solo con BBVA / SANTANDER / GALICIA. TOTAL = suma de la sección.
+    {
+      const g = this.gestoriaValues(data);
+      drawTextInField(map.gestoriaPatentamiento || 'undefined_9', g.patentamiento);
+      drawTextInField(map.gestoriaGastoCrediticio || 'undefined_6', g.gastoCrediticio);
+      drawTextInField(map.gestoriaPrenda || 'undefined_7', g.prenda);
+      drawTextInField(map.operacionTotalSecundario || 'undefined_8', g.total);
     }
 
     // 6. USADO ENTREGADO
@@ -752,16 +785,9 @@ export class BoletoPdfService {
     // toman ambos exclusivamente el valor de totalOperacion.
     // Si totalOperacion no existe o es <= 0, ambos campos deben quedar vacíos.
     if (data.operacion.totalOperacion && data.operacion.totalOperacion > 0) {
-      const totalFormatted = this.formatMoneyForPdf(data.operacion.totalOperacion);
-      this.setTextIfExists(form, map.operacionTotalPrimario, totalFormatted);
-      if (map.operacionTotalSecundario) {
-        this.setTextIfExists(form, map.operacionTotalSecundario, totalFormatted);
-      }
+      this.setTextIfExists(form, map.operacionTotalPrimario, this.formatMoneyForPdf(data.operacion.totalOperacion));
     } else {
       this.clearFieldIfExists(form, map.operacionTotalPrimario);
-      if (map.operacionTotalSecundario) {
-        this.clearFieldIfExists(form, map.operacionTotalSecundario);
-      }
     }
 
     // Financiaciones en las filas de Cheque c/Bco (Text28/Text20 a Text33/Text25)
@@ -801,10 +827,13 @@ export class BoletoPdfService {
     this.clearFieldIfExists(form, 'Text35');
 
     // Gestoría -> Patentamiento (transferencia calculada)
-    if (data.operacion.patentamiento && data.operacion.patentamiento > 0) {
-      this.setTextIfExists(form, map.gestoriaPatentamiento || 'undefined_9', this.formatMoneyForPdf(data.operacion.patentamiento));
-    } else {
-      this.clearFieldIfExists(form, map.gestoriaPatentamiento || 'undefined_9');
+    {
+      const g = this.gestoriaValues(data);
+      const put = (field: string, v: string) => (v ? this.setTextIfExists(form, field, v) : this.clearFieldIfExists(form, field));
+      put(map.gestoriaPatentamiento || 'undefined_9', g.patentamiento);
+      put(map.gestoriaGastoCrediticio || 'undefined_6', g.gastoCrediticio);
+      put(map.gestoriaPrenda || 'undefined_7', g.prenda);
+      put(map.operacionTotalSecundario || 'undefined_8', g.total);
     }
 
     // Usado entregado
@@ -907,9 +936,10 @@ export class BoletoPdfService {
       ? this.formatMoneyForPdf(data.operacion.totalOperacion)
       : '';
     addCheck(map.operacionTotalPrimario, 'Total Operación - Formas de Pago (undefined)', totalExpected);
-    if (map.operacionTotalSecundario) {
-      addCheck(map.operacionTotalSecundario, 'Total Operación - Gestoría (undefined_8)', totalExpected);
-    }
+    const gest = this.gestoriaValues(data);
+    addCheck(map.operacionTotalSecundario || 'undefined_8', 'Gestoría - Total (suma de la sección)', gest.total);
+    addCheck(map.gestoriaGastoCrediticio || 'undefined_6', 'Gestoría - Gasto crediticio', gest.gastoCrediticio);
+    addCheck(map.gestoriaPrenda || 'undefined_7', 'Gestoría - Prenda', gest.prenda);
 
     // Financiaciones activas
     let activeFinancings = (data.operacion.financiaciones || []).filter(
@@ -963,8 +993,8 @@ export class BoletoPdfService {
     // Gestoría -> Patentamiento
     addCheck(
       map.gestoriaPatentamiento || 'undefined_9',
-      'Gestoría - Patentamiento (Transferencia calculada)',
-      data.operacion.patentamiento && data.operacion.patentamiento > 0 ? this.formatMoneyForPdf(data.operacion.patentamiento) : ''
+      'Gestoría - Patentamiento (Transferencia)',
+      gest.patentamiento
     );
 
     if (map.operacionNumeroComprobante) {

@@ -54,7 +54,9 @@ export interface BoletoOperacion {
   efectivoAdicional?: number; // Text19
 
   totalOperacion?: number; // undefined / undefined_8
-  patentamiento?: number; // GESTORÍA -> PATENTAMIENTO (valor de transferencia calculada)
+  patentamiento?: number; // GESTORÍA -> PATENTAMIENTO (valor de transferencia, se imprime con la palabra TRANSFERENCIA)
+  gastoCrediticio?: number; // GESTORÍA -> GASTO CREDITICIO (solo BBVA / SANTANDER / GALICIA)
+  gastoPrenda?: number; // GESTORÍA -> PRENDA (solo BBVA / SANTANDER / GALICIA)
 
   // Colección de financiaciones en V2
   financiaciones: BoletoFinancingEntry[];
@@ -89,6 +91,25 @@ export interface BoletoEntregaUsado {
   chasis?: string; // Chasis_2
 }
 
+/** Datos extra para la planilla UIF (Res. 200/2024) que exige CREDINET. */
+export interface BoletoUifData {
+  nacionalidad?: string;
+  lugarNacimiento?: string;
+  sexo?: string;
+  pais?: string;
+  calle?: string;
+  numero?: string;
+  contactoNombre?: string;
+  contactoVinculo?: string;
+  contactoTelefono?: string;
+  empresa?: string;
+  cargo?: string;
+  cargoDesde?: string;
+  fechaIngreso?: string;
+  emailLaboral?: string;
+  telefonoLaboral?: string;
+}
+
 export interface BoletoData {
   fechaOperacion: string; // YYYY-MM-DD
   fechaDia?: string; // Dia
@@ -101,6 +122,7 @@ export interface BoletoData {
   unidadAdquirida: BoletoUnidadAdquirida;
   entregaUsado: BoletoEntregaUsado;
   observaciones?: string;
+  uif?: BoletoUifData;
 }
 
 export interface BoletoPaymentRowMap {
@@ -154,6 +176,8 @@ export interface BoletoFieldMapping {
 
   // Gestoría
   gestoriaPatentamiento?: string; // undefined_9
+  gestoriaGastoCrediticio?: string; // undefined_6
+  gestoriaPrenda?: string; // undefined_7
 
   // Unidad adquirida
   unidadModelo?: string;

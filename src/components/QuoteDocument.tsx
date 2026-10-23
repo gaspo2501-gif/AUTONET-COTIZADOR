@@ -1,5 +1,5 @@
 import React from 'react';
-import { FinancingOption } from '../services/quoteService';
+import { FinancingOption, TradeIn, hasTradeIn, tradeInLabel } from '../services/quoteService';
 import { Vehicle } from '../types/stock';
 import { formatCurrency, formatKm } from '../utils/formatters';
 import { ADVISOR_INFO } from '../constants/advisor';
@@ -10,6 +10,7 @@ export interface QuoteDocumentProps {
   transferValue: number;
   total: number;
   financingOptions?: FinancingOption[];
+  tradeIn?: TradeIn | null;
   quoteDate?: string;
   validUntil?: string;
   advisor?: typeof ADVISOR_INFO;
@@ -30,6 +31,7 @@ export const QuoteDocument: React.FC<QuoteDocumentProps> = ({
   transferValue,
   total,
   financingOptions = [],
+  tradeIn,
   quoteDate,
   validUntil,
   advisor = ADVISOR_INFO,
@@ -151,6 +153,21 @@ export const QuoteDocument: React.FC<QuoteDocumentProps> = ({
               {formatCurrency(total, vehicle.moneda || 'ARS')}
             </strong>
           </div>
+
+          {hasTradeIn(tradeIn) && (
+            <>
+              <div className="flex items-center justify-between py-1 text-slate-700 mt-1">
+                <span className="font-medium">{tradeInLabel(tradeIn)}</span>
+                <strong className="font-mono text-base text-slate-900">− {formatCurrency(tradeIn.valor, vehicle.moneda || 'ARS')}</strong>
+              </div>
+              {(!financingOptions || financingOptions.length === 0) && (
+                <div className="flex items-center justify-between py-1 text-slate-900">
+                  <span className="font-bold">SALDO A ABONAR</span>
+                  <strong className="font-mono text-lg font-black">{formatCurrency(Math.max(0, total - tradeIn.valor), vehicle.moneda || 'ARS')}</strong>
+                </div>
+              )}
+            </>
+          )}
         </div>
       </section>
 
@@ -203,6 +220,9 @@ export const QuoteDocument: React.FC<QuoteDocumentProps> = ({
             <p className="mt-1.5 text-[10px] text-slate-500">
               Gastos crédito: otorgamiento sobre el monto prestado e inscripción de prenda sobre el total de cuotas, según la entidad.
             </p>
+          )}
+          {hasTradeIn(tradeIn) && (
+            <p className="mt-1.5 text-[10px] text-slate-500">La entrega mínima ya descuenta el valor de toma del usado.</p>
           )}
         </section>
       )}

@@ -11,6 +11,8 @@ import { SyncedCollection } from './syncedCollection';
  * Entidades SIN gastos (BNA, BPN, Credinet):
  *   entrega mínima = (auto + transferencia) − monto prestado
  *
+ * Si el cliente entrega un usado, el valor de toma se descuenta de la entrega mínima.
+ *
  * Los porcentajes se editan por entidad en Configuración.
  */
 
@@ -59,6 +61,8 @@ export interface FinancingInput {
   valorCuota?: number;
   entity?: Pick<FinancingEntity, 'conGastos' | 'otorgamientoPct' | 'prendaPct'> | null;
   redondeo?: number;
+  /** Valor de toma del usado que entrega el cliente: se descuenta de la entrega mínima. */
+  tomaUsado?: number;
 }
 
 export interface FinancingResult {
@@ -86,7 +90,8 @@ export function calcFinancing(i: FinancingInput): FinancingResult {
   const prenda = conGastos ? Math.round(cuotas * valorCuota * ((i.entity?.prendaPct || 0) / 100)) : 0;
   const gastosTotales = otorgamiento + prenda;
   const totalConGastos = precio + transf + gastosTotales;
-  const entregaExacta = totalConGastos - monto;
+  const toma = Math.max(0, i.tomaUsado || 0);
+  const entregaExacta = totalConGastos - monto - toma;
   const step = i.redondeo && i.redondeo > 0 ? i.redondeo : 0;
   const entregaMinima = entregaExacta <= 0 ? 0 : step ? Math.ceil(entregaExacta / step) * step : entregaExacta;
 

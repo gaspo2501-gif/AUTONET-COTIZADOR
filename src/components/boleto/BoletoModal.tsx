@@ -28,7 +28,8 @@ import { Vehicle } from '../../types/stock';
 import { CommercialBudget, FinancingOption } from '../../services/quoteService';
 import { BoletoData, BoletoCompanyKey, BoletoDiagnosticReport, BoletoFinancingEntry } from '../../types/boleto';
 import { resolveCompanyFromVehicle, BOLETO_TEMPLATES_CONFIG } from '../../config/boletoTemplates';
-import { boletoPdfService } from '../../services/boletoPdfService';
+import { boletoPdfService, isBankWithCosts, hasCredinet } from '../../services/boletoPdfService';
+import { uifPdfService } from '../../services/uifPdfService';
 import { BoletoForm } from './BoletoForm';
 import { BoletoReview } from './BoletoReview';
 
@@ -113,6 +114,12 @@ const BoletoModalInner: React.FC<BoletoModalProps & { vehicle: Vehicle }> = ({
     }
 
     const firstFinancing = initialFinanciaciones[0];
+
+    // Gastos de gestoría (solo BBVA / Santander / Galicia): se toman de la alternativa activa
+    const allOptions = financingAlternatives.length ? financingAlternatives : budget?.financiacion?.opciones || [];
+    const activeOpt = allOptions.find((o) => initialFinanciaciones.some((f) => f.activo && f.id === o.id)) || (financingAlternatives.length ? allOptions[0] : undefined);
+    const bankCosts = activeOpt && isBankWithCosts(activeOpt.entidad) ? activeOpt : undefined;
+    const toma = budget?.tomaUsado;
     const llevaFinanc = initialFinanciaciones.some((f) => f.activo);
 
     return {
@@ -149,6 +156,8 @@ const BoletoModalInner: React.FC<BoletoModalProps & { vehicle: Vehicle }> = ({
         efectivoAdicional: 0,
         totalOperacion: totalOp,
         patentamiento: transfCalculada > 0 ? transfCalculada : undefined,
+        gastoCrediticio: bankCosts?.gastosOtorgamiento || undefined,
+        gastoPrenda: bankCosts?.gastosPrenda || undefined,
         llevaFinanciacion: llevaFinanc,
         financiaciones: initialFinanciaciones,
         entidadFinanciera: firstFinancing?.entidad || '',
@@ -168,10 +177,10 @@ const BoletoModalInner: React.FC<BoletoModalProps & { vehicle: Vehicle }> = ({
         fechaEntrega: '',
       },
       entregaUsado: {
-        enabled: false,
-        valorToma: 0,
-        modelo: '',
-        anio: undefined,
+        enabled: Boolean(toma && toma.valor > 0),
+        valorToma: toma?.valor || 0,
+        modelo: toma?.modelo?.toUpperCase() || '',
+        anio: toma?.anio,
         patente: '',
         motor: '',
         chasis: '',
@@ -831,6 +840,29 @@ const BoletoModalInner: React.FC<BoletoModalProps & { vehicle: Vehicle }> = ({
                   )}
                   <span>Descargar PDF</span>
                 </button>
+
+                {hasCredinet(boletoData) && (
+                  <button
+                    type="button"
+                    disabled={isActionLoading}
+                    onClick={async () => {
+                      try {
+                        setIsActionLoading(true);
+                        setActionError(null);
+                        await uifPdfService.download(boletoData);
+                      } catch (err: any) {
+                        setActionError(err?.message || 'No se pudo generar la planilla UIF.');
+                      } finally {
+                        setIsActionLoading(false);
+                      }
+                    }}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 disabled:bg-sky-400 text-white font-bold text-xs transition-colors cursor-pointer shadow-xs"
+                    title="Planilla de datos personales Res. 200/2024 UIF (Credinet)"
+                  >
+                    <Download className="w-4 h-4 text-white" />
+                    <span>Planilla UIF</span>
+                  </button>
+                )}
               </>
             )}
 

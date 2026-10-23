@@ -71,6 +71,9 @@ export interface CommercialBudget {
   // Financiación manual (opcional)
   financiacion?: FinancingPlan;
 
+  // Usado que entrega el cliente (opcional): se descuenta de la entrega mínima
+  tomaUsado?: TradeIn;
+
   // Datos adicionales
   datosCliente: ClientData;
   datosAsesor: AdvisorSettings;
@@ -81,6 +84,21 @@ export interface CommercialBudget {
   updatedAt?: string;
   deleted?: boolean;
 }
+
+export interface TradeIn {
+  valor: number;
+  modelo?: string;
+  anio?: number;
+}
+
+/** "TOMA DE USADO (FORD KA 2017)" */
+export function tradeInLabel(t?: TradeIn | null): string {
+  if (!t) return 'TOMA DE USADO';
+  const d = [t.modelo?.trim().toUpperCase(), t.anio ? String(t.anio) : ''].filter(Boolean).join(' ');
+  return d ? `TOMA DE USADO (${d})` : 'TOMA DE USADO';
+}
+
+export const hasTradeIn = (t?: TradeIn | null): t is TradeIn => Boolean(t && Number(t.valor) > 0);
 
 export type BudgetFollowUpStatus = 'enviado' | 'respondio' | 'perdido' | 'vendido';
 
@@ -103,7 +121,7 @@ export const DEFAULT_ADVISOR: AdvisorSettings = {
 };
 
 /** Calcula gastos y entrega mínima de cada alternativa con la configuración vigente. */
-export function enrichFinancingOptions(opciones: FinancingOption[], precio: number, transferencia: number): FinancingOption[] {
+export function enrichFinancingOptions(opciones: FinancingOption[], precio: number, transferencia: number, tomaUsado = 0): FinancingOption[] {
   const { redondeoEntrega } = financingService.getSettings();
   return opciones
     .filter((o) => o.entidad?.trim() && (Number(o.montoFinanciado) > 0 || Number(o.montoCuota) > 0))
@@ -117,6 +135,7 @@ export function enrichFinancingOptions(opciones: FinancingOption[], precio: numb
         valorCuota: o.montoCuota,
         entity,
         redondeo: redondeoEntrega,
+        tomaUsado,
       });
       return {
         ...o,
@@ -142,6 +161,7 @@ export function buildQuoteWhatsAppMessage(p: {
   transferencia: number;
   total: number;
   opciones?: FinancingOption[];
+  tomaUsado?: TradeIn | null;
 }): string {
   const v = p.vehiculo;
   let t = `🚗 *COTIZACIÓN DE TRANSFERENCIA*\n`;
@@ -155,6 +175,10 @@ export function buildQuoteWhatsAppMessage(p: {
   t += `🏁 *TOTAL ESTIMADO OPERACIÓN:* ${formatCurrency(p.total)}\n`;
 
   const opciones = (p.opciones || []).filter((o) => Number(o.montoFinanciado) > 0);
+  if (hasTradeIn(p.tomaUsado)) {
+    t += `\n🔄 *${tradeInLabel(p.tomaUsado)}* ${formatCurrency(p.tomaUsado.valor)}\n`;
+    if (opciones.length === 0) t += `*SALDO A ABONAR* ${formatCurrency(Math.max(0, p.total - p.tomaUsado.valor))}\n`;
+  }
   opciones.forEach((o, i) => {
     t += `\n`;
     if (opciones.length > 1) t += `🏦 *OPCIÓN ${i + 1}: ${o.entidad}*\n`;
@@ -269,8 +293,12 @@ class QuoteService {
     clientData?: ClientData;
     advisorOverride?: AdvisorSettings;
     financiacion?: FinancingPlan;
+    tomaUsado?: TradeIn | null;
   }): CommercialBudget {
     const { vehicle, dnrpaTableValue, province, clientData, advisorOverride, financiacion } = params;
+    const tomaUsado = hasTradeIn(params.tomaUsado)
+      ? { valor: Math.round(params.tomaUsado.valor), modelo: params.tomaUsado.modelo?.trim() || undefined, anio: params.tomaUsado.anio || undefined }
+      : undefined;
     
     const now = new Date();
     const expiration = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 24 horas exactas
@@ -313,8 +341,9 @@ class QuoteService {
       transferenciaEstimada,
       totalEstimado,
       financiacion: financiacion?.llevaFinanciacion
-        ? { llevaFinanciacion: true, opciones: enrichFinancingOptions(financiacion.opciones, precioVenta, transferenciaEstimada) }
+        ? { llevaFinanciacion: true, opciones: enrichFinancingOptions(financiacion.opciones, precioVenta, transferenciaEstimada, tomaUsado?.valor || 0) }
         : undefined,
+      tomaUsado,
       datosCliente: {
         nombre: clientData?.nombre?.trim() || '',
         telefono: clientData?.telefono?.trim() || '',
@@ -354,6 +383,7 @@ class QuoteService {
       transferencia: budget.transferenciaEstimada,
       total: budget.totalEstimado,
       opciones: budget.financiacion?.opciones,
+      tomaUsado: budget.tomaUsado,
     });
   }
 

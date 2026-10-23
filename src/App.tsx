@@ -329,6 +329,7 @@ export default function App() {
             transferValue={activeBudget.transferenciaEstimada}
             total={activeBudget.totalEstimado}
             financingOptions={activeBudget.financiacion?.opciones}
+            tradeIn={activeBudget.tomaUsado}
             quoteDate={activeBudget.fechaEmision}
             validUntil={activeBudget.fechaVencimiento}
             clientName={activeBudget.datosCliente?.nombre}

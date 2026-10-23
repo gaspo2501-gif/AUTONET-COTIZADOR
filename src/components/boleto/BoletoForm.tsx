@@ -14,6 +14,9 @@ import {
 } from 'lucide-react';
 import { BoletoData, BoletoCompanyKey, BoletoFinancingEntry } from '../../types/boleto';
 import { FinancingOption } from '../../services/quoteService';
+import { financingService } from '../../services/financingService';
+import { isBankWithCosts, hasCredinet } from '../../services/boletoPdfService';
+import { UifSection } from './UifSection';
 
 interface BoletoFormProps {
   data: BoletoData;
@@ -144,6 +147,58 @@ export const BoletoForm: React.FC<BoletoFormProps> = ({
   const financiacionesList = data.operacion.financiaciones || [];
   const financiacionesActivas = financiacionesList.filter((f) => f.activo);
   const totalFinanciado = financiacionesActivas.reduce((acc, f) => acc + (Number(f.montoFinanciado) || 0), 0);
+
+  // Gestoría
+  const bankEntry = financiacionesActivas.find((f) => isBankWithCosts(f.entidad));
+  const gestoriaTotal =
+    (Number(data.operacion.patentamiento) || 0) +
+    (bankEntry ? (Number(data.operacion.gastoCrediticio) || 0) + (Number(data.operacion.gastoPrenda) || 0) : 0);
+  const calcBankCosts = () => {
+    if (!bankEntry) return;
+    const ent = financingService.findEntity(bankEntry.entidad.trim().toUpperCase()) ||
+      financingService.getEntities().find((e) => bankEntry.entidad.toUpperCase().includes(e.nombre));
+    const otorgPct = ent?.otorgamientoPct ?? 4.83;
+    const prendaPct = ent?.prendaPct ?? 3;
+    onChange((prev) => ({
+      ...prev,
+      operacion: {
+        ...prev.operacion,
+        gastoCrediticio: Math.round((Number(bankEntry.montoFinanciado) || 0) * (otorgPct / 100)) || undefined,
+        gastoPrenda: Math.round((Number(bankEntry.cuotas) || 0) * (Number(bankEntry.valorCuota) || 0) * (prendaPct / 100)) || undefined,
+      },
+    }));
+  };
+  // Al activar una financiación de BBVA / Santander / Galicia, completar los gastos si están vacíos
+  const bankKey = bankEntry ? `${bankEntry.id}|${bankEntry.entidad}|${bankEntry.montoFinanciado}|${bankEntry.cuotas}|${bankEntry.valorCuota}` : '';
+  React.useEffect(() => {
+    if (!bankEntry || data.operacion.gastoCrediticio || data.operacion.gastoPrenda) return;
+    const alt = financingAlternatives.find(
+      (o) => o.entidad.toUpperCase() === bankEntry.entidad.toUpperCase() && (o.gastosOtorgamiento || o.gastosPrenda) && Number(o.montoFinanciado) === Number(bankEntry.montoFinanciado)
+    );
+    if (alt) {
+      onChange((prev) => ({ ...prev, operacion: { ...prev.operacion, gastoCrediticio: alt.gastosOtorgamiento || undefined, gastoPrenda: alt.gastosPrenda || undefined } }));
+    } else {
+      calcBankCosts();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bankKey]);
+
+  const moneyInput = (field: 'patentamiento' | 'gastoCrediticio' | 'gastoPrenda', label: string, placeholder: string, muted = false) => (
+    <div>
+      <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">{label} ($)</label>
+      <input
+        type="text"
+        inputMode="numeric"
+        value={data.operacion[field] ? new Intl.NumberFormat('es-AR').format(Number(data.operacion[field])) : ''}
+        onChange={(e) => {
+          const raw = e.target.value.replace(/\D/g, '');
+          handleOperacionChange(field, raw ? Number(raw) : undefined);
+        }}
+        placeholder={placeholder}
+        className={`w-full px-3 py-2 rounded-lg border border-slate-300 bg-white font-mono font-bold text-slate-900 ${muted ? 'opacity-50' : ''}`}
+      />
+    </div>
+  );
 
   const totalMediosPago = sena + efectivo + valorUsado + totalFinanciado;
   const totalOperacion = Number(data.operacion.totalOperacion || data.operacion.precioVehiculo) || 0;
@@ -665,27 +720,9 @@ export const BoletoForm: React.FC<BoletoFormProps> = ({
             <p className="text-[9px] text-slate-400 mt-0.5">Si no hay efectivo extra, queda vacío en el PDF.</p>
           </div>
 
-          <div>
-            <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
-              Gestoría → Patentamiento (undefined_9) ($)
-            </label>
-            <input
-              type="text"
-              inputMode="numeric"
-              value={data.operacion.patentamiento ? new Intl.NumberFormat('es-AR').format(data.operacion.patentamiento) : ''}
-              onChange={(e) => {
-                const raw = e.target.value.replace(/\D/g, '');
-                handleOperacionChange('patentamiento', raw ? Number(raw) : undefined);
-              }}
-              placeholder="Ej: 1.396.500"
-              className="w-full px-3 py-2 rounded-lg border border-slate-300 font-mono text-slate-800"
-            />
-            <p className="text-[9px] text-slate-400 mt-0.5">Transferencia calculada. Si no aplica, dejar vacío (no poner 0).</p>
-          </div>
-
           <div className="bg-emerald-50/60 p-2.5 rounded-lg border border-emerald-200">
             <label className="block text-[10px] font-bold text-emerald-800 uppercase mb-1">
-              Total Operación (Formas de Pago y Gestoría: undefined / undefined_8) ($)
+              Total Operación (Formas de Pago) ($)
             </label>
             <input
               type="text"
@@ -697,8 +734,39 @@ export const BoletoForm: React.FC<BoletoFormProps> = ({
               }}
               className="w-full px-3 py-2 rounded-lg border border-emerald-300 bg-white font-mono font-black text-emerald-900 text-sm"
             />
-            <span className="block text-[9px] text-emerald-700 mt-1">Imprime en TOTAL de FORMAS DE PAGO y en TOTAL de GESTORÍA</span>
+            <span className="block text-[9px] text-emerald-700 mt-1">Imprime en el TOTAL de FORMAS DE PAGO</span>
           </div>
+        </div>
+
+        {/* GESTORÍA: patentamiento (= transferencia), gasto crediticio y prenda (solo BBVA / Santander / Galicia) */}
+        <div className="mt-3 p-3 rounded-xl border border-slate-200 bg-slate-50/60">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+            <span className="text-[11px] font-extrabold uppercase tracking-wide text-slate-700">Gestoría</span>
+            {bankEntry && (
+              <button
+                type="button"
+                onClick={calcBankCosts}
+                className="text-[11px] font-bold text-indigo-700 hover:underline cursor-pointer"
+              >
+                Calcular gastos con {bankEntry.entidad.toUpperCase()}
+              </button>
+            )}
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+            {moneyInput('patentamiento', 'Patentamiento (transferencia)', 'Ej: 1.396.500')}
+            {moneyInput('gastoCrediticio', 'Gasto crediticio', bankEntry ? 'Otorgamiento' : 'Solo BBVA / Santander / Galicia', !bankEntry)}
+            {moneyInput('gastoPrenda', 'Prenda', bankEntry ? 'Inscripción de prenda' : 'Solo BBVA / Santander / Galicia', !bankEntry)}
+            <div className="p-2.5 rounded-lg bg-white border border-slate-200">
+              <span className="block text-[10px] font-bold text-slate-600 uppercase mb-1">Total gestoría</span>
+              <span className="block font-mono font-black text-slate-900 text-sm py-1">
+                {gestoriaTotal > 0 ? `$ ${new Intl.NumberFormat('es-AR').format(gestoriaTotal)}` : '—'}
+              </span>
+            </div>
+          </div>
+          <p className="text-[10px] text-slate-500 mt-2">
+            En el boleto el patentamiento sale como “{data.operacion.patentamiento ? new Intl.NumberFormat('es-AR').format(data.operacion.patentamiento) : '1.396.500'} (TRANSFERENCIA)”. El TOTAL de gestoría es la suma de los ítems.
+            {!bankEntry && ' Gasto crediticio y prenda solo se imprimen si hay una financiación activa de BBVA, Santander o Galicia.'}
+          </p>
         </div>
       </div>
 
@@ -734,9 +802,15 @@ export const BoletoForm: React.FC<BoletoFormProps> = ({
                   key={opt.id}
                   type="button"
                   onClick={() => {
+                    if (isBankWithCosts(opt.entidad) && (opt.gastosOtorgamiento || opt.gastosPrenda)) {
+                      onChange((prev) => ({
+                        ...prev,
+                        operacion: { ...prev.operacion, gastoCrediticio: opt.gastosOtorgamiento || undefined, gastoPrenda: opt.gastosPrenda || undefined },
+                      }));
+                    }
                     handleAddFinancing({
                       entidad: opt.entidad,
-                      montoFinanciado: Math.round(opt.cuotas * opt.montoCuota * 0.7) || 0,
+                      montoFinanciado: opt.montoFinanciado || Math.round(opt.cuotas * opt.montoCuota * 0.7) || 0,
                       cuotas: opt.cuotas,
                       valorCuota: opt.montoCuota,
                       activo: true,
@@ -996,6 +1070,7 @@ export const BoletoForm: React.FC<BoletoFormProps> = ({
         )}
       </div>
 
+      {hasCredinet(data) && <UifSection data={data} onChange={onChange} />}
     </div>
   );
 };

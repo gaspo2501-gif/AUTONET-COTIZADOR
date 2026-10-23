@@ -1,6 +1,6 @@
 import React from 'react';
 import { FileText, Search, Plus, Copy, Check, Eye, Calculator, Trash2, MessageCircle, Clock, User, Phone, AlertTriangle, X, BellRing, TrendingDown, Sparkles } from 'lucide-react';
-import { CommercialBudget, quoteService, BudgetFollowUpStatus } from '../../services/quoteService';
+import { CommercialBudget, quoteService, BudgetFollowUpStatus, hasTradeIn, tradeInLabel } from '../../services/quoteService';
 import { getBudgetAlerts, todayISO } from '../../utils/budgetAlerts';
 import { Vehicle } from '../../types/stock';
 import { formatCurrency } from '../../utils/formatters';
@@ -386,6 +386,12 @@ export const BudgetsView: React.FC<BudgetsViewProps> = ({ vehicles, onOpenBudget
                             {notAvailable
                               ? 'La unidad ya no está disponible.'
                               : `El precio cambió: hoy ${formatCurrency(current!.precio, current!.moneda)}.`}
+                          </div>
+                        )}
+                        {hasTradeIn(b.tomaUsado) && (
+                          <div className="mt-2 inline-flex items-center gap-1.5 text-[11.5px] px-2 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-900">
+                            <span className="font-bold">{tradeInLabel(b.tomaUsado)}</span>
+                            <span className="font-extrabold tabular">{formatCurrency(b.tomaUsado.valor)}</span>
                           </div>
                         )}
                         {(b.financiacion?.opciones || []).some((o) => o.entregaMinima !== undefined) && (

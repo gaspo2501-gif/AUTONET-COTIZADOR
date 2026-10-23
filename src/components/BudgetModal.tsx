@@ -202,6 +202,7 @@ export const BudgetModal: React.FC<BudgetModalProps> = ({
               transferValue={budget.transferenciaEstimada}
               total={budget.totalEstimado}
               financingOptions={budget.financiacion?.opciones}
+              tradeIn={budget.tomaUsado}
               quoteDate={budget.fechaEmision}
               validUntil={budget.fechaVencimiento}
               clientName={clientName}
