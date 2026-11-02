@@ -2,10 +2,12 @@ import { Vehicle, ProvinceTransfer } from '../types/stock';
 import { formatCurrency, formatKm } from '../utils/formatters';
 import { ADVISOR_INFO } from '../constants/advisor';
 import { SyncedCollection } from './syncedCollection';
+import { advisorProfileService } from './advisorProfileService';
 import { calcFinancing, financingService } from './financingService';
 
 export interface AdvisorSettings {
   nombre: string;
+  cargo?: string;
   telefono: string;
   email?: string;
   sucursal: string;
@@ -109,7 +111,6 @@ export interface BudgetFollowUp {
   nota?: string;
 }
 
-const ADVISOR_STORAGE_KEY = 'autonet_advisor_settings_v1';
 const BUDGETS_STORAGE_KEY = 'autonet_saved_budgets_v1';
 
 export const DEFAULT_ADVISOR: AdvisorSettings = {
@@ -248,28 +249,29 @@ class QuoteService {
    * Obtiene los datos del asesor comercial guardados por el usuario.
    */
   public getAdvisorSettings(): AdvisorSettings {
-    if (typeof window === 'undefined') return DEFAULT_ADVISOR;
-    try {
-      const saved = localStorage.getItem(ADVISOR_STORAGE_KEY);
-      if (saved) {
-        return { ...DEFAULT_ADVISOR, ...JSON.parse(saved) };
-      }
-    } catch (e) {
-      console.error('Error al leer datos del asesor:', e);
-    }
-    return DEFAULT_ADVISOR;
+    // Perfil del usuario que inició sesión (cada asesor tiene el suyo)
+    const p = advisorProfileService.get();
+    return {
+      ...DEFAULT_ADVISOR,
+      nombre: ADVISOR_INFO.nombre,
+      cargo: ADVISOR_INFO.cargo,
+      telefono: ADVISOR_INFO.telefono,
+      email: p?.email || '',
+      sucursal: p?.sucursal || DEFAULT_ADVISOR.sucursal,
+    };
   }
 
   /**
    * Guarda los datos del asesor comercial en almacenamiento local.
    */
   public saveAdvisorSettings(settings: AdvisorSettings): void {
-    if (typeof window === 'undefined') return;
-    try {
-      localStorage.setItem(ADVISOR_STORAGE_KEY, JSON.stringify(settings));
-    } catch (e) {
-      console.error('Error al guardar datos del asesor:', e);
-    }
+    advisorProfileService.save({
+      nombre: settings.nombre.trim(),
+      cargo: (settings.cargo || ADVISOR_INFO.cargo).trim(),
+      telefono: settings.telefono.trim(),
+      email: settings.email?.trim() || undefined,
+      sucursal: settings.sucursal?.trim() || undefined,
+    });
   }
 
   /**

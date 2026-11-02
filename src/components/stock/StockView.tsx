@@ -41,6 +41,7 @@ const COMMERCIAL_TABS: { value: CommercialFilter; label: string; countKey: keyof
 type Quick = { key: string; label: string; isActive: (f: StockFilters) => boolean; toggle: (f: StockFilters) => StockFilters };
 const THIS_YEAR = new Date().getFullYear();
 const QUICK_FILTERS: Quick[] = [
+  { key: 'criticas', label: 'Críticas', isActive: (f) => Boolean(f.criticas), toggle: (f) => ({ ...f, criticas: !f.criticas }) },
   { key: '0km', label: '0 km', isActive: (f) => f.kmMax === 0, toggle: (f) => ({ ...f, kmMax: f.kmMax === 0 ? '' : 0 }) },
   {
     key: 'recent',
@@ -77,6 +78,7 @@ function describeActiveFilters(f: StockFilters, defaults: StockFilters): { key: 
   if (f.empresa) out.push({ key: 'emp', label: f.empresa, clear: (x) => ({ ...x, empresa: '' }) });
   if (f.fotosAutonet && f.fotosAutonet !== 'todas')
     out.push({ key: 'fotos', label: f.fotosAutonet === 'con_fotos' ? 'Con fotos web' : 'Sin fotos web', clear: (x) => ({ ...x, fotosAutonet: defaults.fotosAutonet }) });
+  if (f.criticas) out.push({ key: 'criticas', label: 'Solo críticas', clear: (x) => ({ ...x, criticas: false }) });
   return out;
 }
 

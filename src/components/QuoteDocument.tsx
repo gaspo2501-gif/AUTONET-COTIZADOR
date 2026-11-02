@@ -13,7 +13,7 @@ export interface QuoteDocumentProps {
   tradeIn?: TradeIn | null;
   quoteDate?: string;
   validUntil?: string;
-  advisor?: typeof ADVISOR_INFO;
+  advisor?: { nombre: string; telefono: string; cargo?: string };
   clientName?: string;
   clientPhone?: string;
 }
@@ -242,16 +242,16 @@ export const QuoteDocument: React.FC<QuoteDocumentProps> = ({
         <div className="flex items-end justify-between">
           <div>
             <div className="font-bold text-sm text-slate-900">
-              {advisor?.nombre || 'Gaspar Nicolau'}
+              {advisor?.nombre || ADVISOR_INFO.nombre}
             </div>
             <div className="text-xs text-slate-600 font-medium">
-              {advisor?.cargo || 'Asesor comercial Autonet'}
+              {(advisor as any)?.cargo || ADVISOR_INFO.cargo}
             </div>
             <div className="text-xs font-mono font-bold text-slate-800 mt-0.5">
-              2994290620
+              {advisor?.telefono || ADVISOR_INFO.telefono}
             </div>
             <div className="text-[11px] text-slate-500 mt-0.5">
-              Felix San Martin, 1650, NEUQUEN, Neuquén, Argentina
+              {ADVISOR_INFO.direccion}, {ADVISOR_INFO.ciudad}, {ADVISOR_INFO.provincia}, {ADVISOR_INFO.pais}
             </div>
           </div>
 

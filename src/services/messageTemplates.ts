@@ -27,7 +27,8 @@ export const TEMPLATE_PLACEHOLDERS: { key: string; label: string }[] = [
   { key: 'firma', label: 'Tu firma' },
 ];
 
-const SIGNATURE = `━━━━━━━━━━━━━━━━━━━━━\n${ADVISOR_INFO.nombre} | ${ADVISOR_INFO.cargo}\n📞 ${ADVISOR_INFO.telefono}\n📍 ${ADVISOR_INFO.direccion}, ${ADVISOR_INFO.ciudad}`;
+const signature = () =>
+  `━━━━━━━━━━━━━━━━━━━━━\n${ADVISOR_INFO.nombre} | ${ADVISOR_INFO.cargo}\n📞 ${ADVISOR_INFO.telefono}\n📍 ${ADVISOR_INFO.direccion}, ${ADVISOR_INFO.ciudad}`;
 
 export const DEFAULT_TEMPLATES: MessageTemplate[] = [
   {
@@ -97,7 +98,7 @@ export const messageTemplates = {
       caja: v.caja || '',
       patente: v.patente || '',
       link,
-      firma: SIGNATURE,
+      firma: signature(),
       firmaNombre: ADVISOR_INFO.nombre.split(' ')[0],
     };
     return texto

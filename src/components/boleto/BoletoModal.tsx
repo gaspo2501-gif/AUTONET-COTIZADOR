@@ -31,6 +31,8 @@ import { resolveCompanyFromVehicle, BOLETO_TEMPLATES_CONFIG } from '../../config
 import { boletoPdfService, isBankWithCosts, hasCredinet } from '../../services/boletoPdfService';
 import { uifPdfService } from '../../services/uifPdfService';
 import { BoletoForm } from './BoletoForm';
+import { BoletoSaleSection } from './BoletoSaleSection';
+import { boletoSaleService, saleOptionsFromBoleto } from '../../services/boletoSaleService';
 import { BoletoReview } from './BoletoReview';
 
 interface BoletoModalProps {
@@ -259,6 +261,14 @@ const BoletoModalInner: React.FC<BoletoModalProps & { vehicle: Vehicle }> = ({
       generadoConAdvertencias: issues.length > 0,
     });
     setGenerated(rec);
+    // Venta propia registrada automáticamente con los datos del boleto
+    const sold = boletoSaleService.register(boletoData, vehicle);
+    setSaleRegistered(sold ? 'ok' : boletoData.venta?.registrar === false ? 'skip' : 'fail');
+  };
+  const [saleRegistered, setSaleRegistered] = useState<'ok' | 'skip' | 'fail' | 'undone' | null>(null);
+  const undoSale = () => {
+    boletoSaleService.undo(vehicle);
+    setSaleRegistered('undone');
   };
 
   /** Bloquea la generación si hay errores, salvo que el asesor confirme "generar igual". */
@@ -272,20 +282,8 @@ const BoletoModalInner: React.FC<BoletoModalProps & { vehicle: Vehicle }> = ({
   };
 
   const registerSale = () => {
-    const d = boletoData;
-    const activas = (d.operacion.financiaciones || []).filter((f) => f.activo);
-    appEvents.requestRegisterSale({
-      patente: vehicle.patente,
-      prefill: {
-        precioRealVenta: Number(d.operacion.precioVehiculo) || vehicle.precio || 0,
-        soldAt: todayISO(),
-        tieneTomaUsado: d.entregaUsado.enabled,
-        valorTomaUsado: d.entregaUsado.enabled ? Number(d.entregaUsado.valorToma) || 0 : undefined,
-        marcaModeloTomaUsado: d.entregaUsado.enabled ? d.entregaUsado.modelo || undefined : undefined,
-        patenteTomaUsado: d.entregaUsado.enabled ? d.entregaUsado.patente || undefined : undefined,
-        usaCredinet: activas.some((f) => /credinet|wunder/i.test(f.entidad || '')),
-      },
-    });
+    const { saleOwner, ...rest } = saleOptionsFromBoleto(boletoData, vehicle);
+    appEvents.requestRegisterSale({ patente: vehicle.patente, prefill: { ...rest, saleOwner } });
     boletoHistoryService.clearDraft(draftKey);
     onClose();
   };
@@ -684,6 +682,8 @@ const BoletoModalInner: React.FC<BoletoModalProps & { vehicle: Vehicle }> = ({
                 financingAlternatives={financingAlternatives}
                 isMirage={companyKey === 'MIRAGE'}
               />
+
+              <BoletoSaleSection vehicle={vehicle} data={boletoData} onChange={setBoletoData} />
             </div>
           </div>
         )}
@@ -695,11 +695,31 @@ const BoletoModalInner: React.FC<BoletoModalProps & { vehicle: Vehicle }> = ({
               <span className="inline-flex items-center gap-2 font-semibold">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Boleto generado y guardado en el historial.
               </span>
-              {vehicle.estado !== 'Vendido' && (
+              {saleRegistered === 'ok' ? (
+                <span className="inline-flex flex-wrap items-center gap-2">
+                  <span className="font-semibold">
+                    Venta registrada en Mis ventas
+                    {(() => {
+                      const o = saleOptionsFromBoleto(boletoData, vehicle);
+                      const tags = [o.esCritico && 'crítica', o.usaCredinet && 'Credinet', o.tieneTomaUsado && 'con toma'].filter(Boolean);
+                      return tags.length ? ` (${tags.join(' · ')})` : '';
+                    })()}
+                    .
+                  </span>
+                  <button type="button" onClick={registerSale} className="btn btn-sm bg-white border border-emerald-300 text-emerald-800">
+                    <Tag className="w-3.5 h-3.5" /> Revisar
+                  </button>
+                  <button type="button" onClick={undoSale} className="btn btn-sm btn-ghost !text-rose-700">
+                    Deshacer
+                  </button>
+                </span>
+              ) : saleRegistered === 'undone' ? (
+                <span className="font-semibold text-slate-700">Se deshizo el registro de la venta: la unidad volvió a Disponible.</span>
+              ) : saleRegistered === 'fail' ? (
                 <button type="button" onClick={registerSale} className="btn btn-sm bg-emerald-600 hover:bg-emerald-700 text-white">
-                  <Tag className="w-3.5 h-3.5" /> Registrar la venta con estos datos
+                  <Tag className="w-3.5 h-3.5" /> La unidad no está en el stock: registrar a mano
                 </button>
-              )}
+              ) : null}
             </div>
           ) : issues.length > 0 ? (
             <div className={`border-t text-[12.5px] ${errorCount ? 'bg-red-50 border-red-200 text-red-900' : 'bg-amber-50 border-amber-200 text-amber-900'}`}>

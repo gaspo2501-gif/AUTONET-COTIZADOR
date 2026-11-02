@@ -110,6 +110,16 @@ export interface BoletoUifData {
   telefonoLaboral?: string;
 }
 
+/** Datos para registrar la venta automáticamente al generar el boleto. */
+export interface BoletoVentaData {
+  /** false = no registrar la venta al generar (p. ej. boleto de prueba). */
+  registrar?: boolean;
+  ivaVenta?: 21 | 10.5;
+  ivaTomaUsado?: 21 | 10.5;
+  /** Si no se tocó, se toma de la unidad (PDF de stock o marca manual). */
+  esCritico?: boolean;
+}
+
 export interface BoletoData {
   fechaOperacion: string; // YYYY-MM-DD
   fechaDia?: string; // Dia
@@ -123,6 +133,7 @@ export interface BoletoData {
   entregaUsado: BoletoEntregaUsado;
   observaciones?: string;
   uif?: BoletoUifData;
+  venta?: BoletoVentaData;
 }
 
 export interface BoletoPaymentRowMap {

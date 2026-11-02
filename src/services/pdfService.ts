@@ -39,6 +39,8 @@ async function loadPdfJs(): Promise<any> {
   return pdfjsPromise;
 }
 
+import { extractFillRects, rowHighlightColor } from '../utils/pdfHighlights';
+
 export { normalizeMileage, parseArgentineInteger, parseMileage, parsePrice };
 
 /**
@@ -725,6 +727,8 @@ export interface PdfToken {
 export interface VisualRow {
   y: number;
   page: number;
+  /** Color de resaltado de la fila en el PDF (unidad crítica), si tiene. */
+  highlight?: string | null;
   tokens: PdfToken[];
   rawLine: string;
 }
@@ -1118,6 +1122,7 @@ export class PdfService {
       }
 
       let allPageVisualRows: VisualRow[] = [];
+      let highlightScanOk = false;
       let fullText = '';
       const warnings: string[] = [];
 
@@ -1127,6 +1132,22 @@ export class PdfService {
           const textContent = pageNum === 1 ? firstContent : await page.getTextContent();
           const pageTokens = this.extractTokensFromPage(textContent, pageNum);
           const pageRows = this.groupTokensIntoVisualRows(pageTokens);
+
+          // Filas resaltadas con color (unidades críticas)
+          try {
+            const rects = await extractFillRects(page, pdfjsLib.OPS);
+            if (rects.length && pageTokens.length) {
+              const x0 = Math.min(...pageTokens.map((t) => t.x)) - 4;
+              const x1 = Math.max(...pageTokens.map((t) => t.x + t.width)) + 4;
+              for (const r of pageRows) {
+                const h = r.tokens.length ? r.tokens.reduce((a, t) => a + t.height, 0) / r.tokens.length : 8;
+                r.highlight = rowHighlightColor(rects, r.y + h * 0.35, x0, x1);
+              }
+            }
+            highlightScanOk = true;
+          } catch (hlErr) {
+            console.warn(`[AUTONET PDF] No se pudieron leer los colores de la página ${pageNum}:`, hlErr);
+          }
 
           allPageVisualRows = allPageVisualRows.concat(pageRows);
           fullText += `\n--- PÁGINA ${pageNum} ---\n` + pageRows.map((r) => r.rawLine).join('\n');
@@ -1468,6 +1489,7 @@ export class PdfService {
           origenDato: 'autonet_pdf',
           source: 'pdf_parser',
         };
+        if (highlightScanOk) vehicle.criticoPdf = Boolean(row.highlight);
 
         validVehicles.push(vehicle);
 
@@ -1528,11 +1550,24 @@ export class PdfService {
         detail: `${recordsReconstructed} filas detectadas`,
       });
 
+      // Unidades críticas (filas resaltadas). Si casi todo viene pintado, es un sombreado de la tabla y no se usa.
+      if (highlightScanOk && validVehicles.length > 0) {
+        const criticas = validVehicles.filter((v) => v.criticoPdf).length;
+        if (criticas > validVehicles.length * 0.6) {
+          validVehicles.forEach((v) => delete v.criticoPdf);
+          warnings.push('El PDF tiene casi todas las filas pintadas: no se pudieron distinguir las unidades críticas.');
+        } else {
+          console.log(`[AUTONET PDF] Unidades críticas (resaltadas): ${criticas}`);
+        }
+      } else {
+        validVehicles.forEach((v) => delete v.criticoPdf);
+      }
+
       onStageUpdate?.({
         key: 'vehiculos_validados',
         label: 'Vehículos validados',
         status: 'ok',
-        detail: `${validVehicles.length} unidades válidas`,
+        detail: `${validVehicles.length} unidades válidas · ${validVehicles.filter((v) => v.criticoPdf).length} críticas`,
       });
 
       const diagnostics: ParsingDiagnostics = {
@@ -1868,6 +1903,16 @@ export class PdfService {
           advertenciaEstado = 'Vehículo marcado manualmente como VENDIDO por el asesor comercial. Se mantendrá VENDIDO protegiendo la venta.';
         } else if (existing.estado === 'Reservado' && existing.estadoModificadoManualmente) {
           advertenciaEstado = 'Vehículo con RESERVA manual activa. Se preserva el estado reservado.';
+        }
+
+        // Unidad crítica (fila resaltada en el PDF)
+        if (typeof incoming.criticoPdf === 'boolean' && incoming.criticoPdf !== Boolean(existing.criticoPdf)) {
+          changes.push({
+            campo: 'criticoPdf',
+            etiqueta: 'Unidad crítica',
+            valorAnterior: existing.criticoPdf ? 'SÍ' : 'NO',
+            valorNuevo: incoming.criticoPdf ? 'SÍ' : 'NO',
+          });
         }
 
         if (changes.length > 0) {

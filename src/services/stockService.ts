@@ -744,6 +744,7 @@ class StockService {
           source: item.vehiculoNuevo.source || 'pdf_parser',
           provinciaRadicacion: 'Neuquén',
           isHistorical: false,
+          ...(typeof item.vehiculoNuevo.criticoPdf === 'boolean' ? { criticoPdf: item.vehiculoNuevo.criticoPdf } : {}),
         };
         updatedMap.set(key, newVehicle);
       } else if (item.tipo === 'modificado' && updatedMap.has(key)) {
@@ -766,6 +767,8 @@ class StockService {
                     : Number(String(c.valorNuevo).replace(/[^0-9]/g, '')) || null;
                 newProps.precioEstado = newProps.precio ? 'DEFINIDO' : 'A_CONFIRMAR';
               }
+            } else if (c.campo === 'criticoPdf') {
+              newProps.criticoPdf = c.valorNuevo === true || c.valorNuevo === 'SÍ';
             } else if (c.campo === 'kilometraje') {
               newProps.kilometraje = normalizeMileage(c.valorNuevo);
             } else if (c.campo === 'anio') {

@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { Vehicle } from '../types/stock';
 import { todayISO } from '../utils/budgetAlerts';
+import { isCriticalVehicle } from '../utils/critical';
 import { CommissionIvaRate } from '../types/commissions';
 import { formatCurrency } from '../utils/formatters';
 import { calculateBaseCommission, calculateTradeInCommission } from '../services/commissionService';
@@ -60,8 +61,9 @@ export const MarkAsSoldModal: React.FC<MarkAsSoldModalProps> = ({
   // Fecha local (toISOString usa UTC y después de las 21 h en Argentina daba el día siguiente)
   const todayStr = todayISO();
 
+  // Las ventas propias se registran solas al generar el boleto: a mano, por defecto, se carga la de otro asesor
   const [saleOwner, setSaleOwner] = useState<'self' | 'other'>(
-    src.saleOwner === 'other' ? 'other' : 'self'
+    src.saleOwner === 'self' || (prefill && src.saleOwner !== 'other') ? 'self' : 'other'
   );
   const [soldAt, setSoldAt] = useState<string>(
     src.soldAt ? src.soldAt.slice(0, 10) : todayStr
@@ -76,7 +78,7 @@ export const MarkAsSoldModal: React.FC<MarkAsSoldModalProps> = ({
   const [ivaVenta, setIvaVenta] = useState<CommissionIvaRate>(src.ivaVenta ?? 21);
 
   // Conceptos comerciales
-  const [esCritico, setEsCritico] = useState<boolean>(src.esCritico ?? false);
+  const [esCritico, setEsCritico] = useState<boolean>(src.esCritico ?? isCriticalVehicle(vehicle));
   const [usaCredinet, setUsaCredinet] = useState<boolean>(src.usaCredinet ?? false);
   const [tieneTomaUsado, setTieneTomaUsado] = useState<boolean>(src.tieneTomaUsado ?? false);
 
@@ -109,6 +111,12 @@ export const MarkAsSoldModal: React.FC<MarkAsSoldModalProps> = ({
     const safeValorToma = tieneTomaUsado ? Math.max(0, Number(valorTomaUsado) || 0) : 0;
     const calcBase = calculateBaseCommission(safePrecioVenta, ivaVenta);
     const calcToma = tieneTomaUsado ? calculateTradeInCommission(safeValorToma, ivaTomaUsado) : 0;
+
+    if (saleOwner === 'other') {
+      onConfirm({ saleOwner, soldAt, observaciones: observaciones.trim() || undefined, fechaFacturacion: fechaFacturacion.trim() || undefined });
+      onClose();
+      return;
+    }
 
     onConfirm({
       saleOwner,
@@ -253,6 +261,18 @@ export const MarkAsSoldModal: React.FC<MarkAsSoldModalProps> = ({
             </div>
           </div>
 
+          {saleOwner === 'other' ? (
+            <div className="px-3.5 py-2.5 rounded-xl bg-indigo-50 border border-indigo-200 text-[12px] text-indigo-900">
+              Venta de otro asesor: solo se guarda la fecha. No suma a tus comisiones.
+            </div>
+          ) : (
+            !prefill && !isAlreadySold && (
+              <div className="px-3.5 py-2.5 rounded-xl bg-amber-50 border border-amber-200 text-[12px] text-amber-900">
+                Tus ventas se registran solas al generar el boleto, con precio, crítico, Credinet y toma. Usá esto solo si la vendiste sin boleto de la app.
+              </div>
+            )
+          )}
+
           {/* Fecha de Venta */}
           <div>
             <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
@@ -269,6 +289,7 @@ export const MarkAsSoldModal: React.FC<MarkAsSoldModalProps> = ({
             />
           </div>
 
+          {saleOwner === 'self' && (<>
           {/* Precio Real de Venta & Alícuota IVA */}
           <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-3">
             <div>
@@ -540,6 +561,7 @@ export const MarkAsSoldModal: React.FC<MarkAsSoldModalProps> = ({
             </div>
           )}
 
+          </>)}
           {/* Observaciones opcionales */}
           <div>
             <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">

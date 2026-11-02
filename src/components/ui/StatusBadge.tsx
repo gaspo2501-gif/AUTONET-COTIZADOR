@@ -1,6 +1,7 @@
 import React from 'react';
 import { Vehicle } from '../../types/stock';
 import { isHistoricalVehicle, normalizeCommercialStatus } from '../../utils/stockSelectors';
+import { isCriticalVehicle } from '../../utils/critical';
 
 type Tone = { label: string; cls: string; dot: string };
 
@@ -16,9 +17,21 @@ export function getVehicleStatusTone(vehicle: Vehicle): Tone {
   return { label: 'Disponible', cls: 'bg-emerald-50 text-emerald-700 ring-emerald-200', dot: 'bg-emerald-500' };
 }
 
+export const CriticalBadge: React.FC<{ size?: 'sm' | 'md' }> = ({ size = 'sm' }) => (
+  <span
+    title="Unidad crítica (resaltada en el PDF de stock o marcada a mano)"
+    className={`inline-flex items-center gap-1 rounded-full ring-1 ring-inset font-extrabold whitespace-nowrap bg-orange-50 text-orange-700 ring-orange-300 ${
+      size === 'sm' ? 'text-[10px] px-2 py-0.5' : 'text-[11px] px-2.5 py-1'
+    }`}
+  >
+    🔥 Crítica
+  </span>
+);
+
 export const StatusBadge: React.FC<{ vehicle: Vehicle; size?: 'sm' | 'md' }> = ({ vehicle, size = 'md' }) => {
   const t = getVehicleStatusTone(vehicle);
-  return (
+  const critical = !isHistoricalVehicle(vehicle) && normalizeCommercialStatus(vehicle.estado) !== 'Vendido' && isCriticalVehicle(vehicle);
+  const badge = (
     <span
       className={`inline-flex items-center gap-1.5 rounded-full ring-1 ring-inset font-bold whitespace-nowrap ${t.cls} ${
         size === 'sm' ? 'text-[10px] px-2 py-0.5' : 'text-[11px] px-2.5 py-1'
@@ -26,6 +39,13 @@ export const StatusBadge: React.FC<{ vehicle: Vehicle; size?: 'sm' | 'md' }> = (
     >
       <span className={`w-1.5 h-1.5 rounded-full ${t.dot}`} />
       {t.label}
+    </span>
+  );
+  if (!critical) return badge;
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1">
+      {badge}
+      <CriticalBadge size={size} />
     </span>
   );
 };

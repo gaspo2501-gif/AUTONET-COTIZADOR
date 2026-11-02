@@ -28,6 +28,7 @@ import {
   LogIn
 } from 'lucide-react';
 import { stockService } from '../services/stockService';
+import { advisorProfileService } from '../services/advisorProfileService';
 import { quoteService, AdvisorSettings } from '../services/quoteService';
 import { Vehicle } from '../types/stock';
 import { formatCurrency } from '../utils/formatters';
@@ -58,6 +59,8 @@ export const FutureModulesView: React.FC<FutureModulesViewProps> = ({
   // Configuración del Asesor Comercial
   const [advisorSettings, setAdvisorSettings] = useState<AdvisorSettings>(() => quoteService.getAdvisorSettings());
   const [advisorSavedMessage, setAdvisorSavedMessage] = useState(false);
+  // Si el perfil llega de la nube (u otro dispositivo), refrescar el formulario
+  React.useEffect(() => advisorProfileService.subscribe(() => setAdvisorSettings(quoteService.getAdvisorSettings())), []);
 
 
   // Guardar datos del asesor

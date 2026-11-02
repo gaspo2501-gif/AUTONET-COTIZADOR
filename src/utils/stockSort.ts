@@ -1,3 +1,4 @@
+import { isCriticalVehicle } from './critical';
 import { Vehicle } from '../types/stock';
 import { normalizeMileage } from './formatters';
 import { normalizeCommercialStatus } from './stockSelectors';
@@ -11,11 +12,13 @@ export type StockSortKey =
   | 'anio_desc'
   | 'anio_asc'
   | 'marca_asc'
-  | 'recientes';
+  | 'recientes'
+  | 'criticas_primero';
 
 export const SORT_OPTIONS: { value: StockSortKey; label: string }[] = [
   { value: 'disponibles_primero', label: 'Disponibles primero' },
   { value: 'recientes', label: 'Ingresos más recientes' },
+  { value: 'criticas_primero', label: 'Críticas primero' },
   { value: 'precio_asc', label: 'Menor precio' },
   { value: 'precio_desc', label: 'Mayor precio' },
   { value: 'km_asc', label: 'Menor kilometraje' },
@@ -53,6 +56,12 @@ export function sortVehicles(list: Vehicle[], sortBy: StockSortKey): Vehicle[] {
         return a.anio - b.anio;
       case 'marca_asc':
         return `${a.marca} ${a.modelo} ${a.version}`.localeCompare(`${b.marca} ${b.modelo} ${b.version}`, 'es');
+      case 'criticas_primero': {
+        const ca = isCriticalVehicle(a) ? 0 : 1;
+        const cb = isCriticalVehicle(b) ? 0 : 1;
+        if (ca !== cb) return ca - cb;
+        return (STATUS_ORDER[normalizeCommercialStatus(a.estado)] || 99) - (STATUS_ORDER[normalizeCommercialStatus(b.estado)] || 99) || b.anio - a.anio;
+      }
       case 'recientes':
         return time(b.fechaIncorporacion) - time(a.fechaIncorporacion) || (b.numeroOrden ?? 0) - (a.numeroOrden ?? 0);
       case 'disponibles_primero':

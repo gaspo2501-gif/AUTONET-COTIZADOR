@@ -1,5 +1,31 @@
 # Autonet Cotizador — Versión 2
 
+## Séptima etapa: varios asesores, cada uno con lo suyo
+
+- Cada usuario de Firebase tiene sus propios datos (stock, boletos, presupuestos, ventas, comisiones, entidades de financiación, mensajes). Ya era así en la nube; ahora además:
+  - **Perfil de asesor por usuario** (nombre, cargo, teléfono): firma los mensajes de WhatsApp, el presupuesto A4, las comparaciones y las historias. En el primer ingreso se piden los datos; se cambian en Configuración.
+  - **Sin mezclas en un mismo dispositivo**: si en un celular/PC había datos de otro usuario, no se suben a la cuenta del nuevo.
+- Las ventas de otros asesores se cargan con "Otro vendedor" (solo fecha).
+- Alta de un asesor nuevo: Firebase Console → Authentication → Users → Add user (email y contraseña).
+
+Archivos: `services/advisorProfileService.ts`, `components/AdvisorSetupModal.tsx` (nuevos); cambios en `constants/advisor.ts`, `services/syncedCollection.ts`, `services/quoteService.ts`, `services/messageTemplates.ts`, `components/QuoteDocument.tsx`, `components/FutureModulesView.tsx`, `App.tsx`.
+
+## Sexta etapa: ventas automáticas desde el boleto y unidades críticas
+
+### Ventas propias automáticas
+- Nueva sección en el boleto: "Registro automático de la venta" (precio, IVA, crítica, Credinet, toma de usado e IVA del usado, comisión estimada).
+- Al descargar o imprimir el boleto, la unidad queda en Mis ventas como venta propia con esos datos. Credinet y toma salen solos del boleto; crítica sale del stock.
+- Aviso con "Revisar" (abre el registro) y "Deshacer" (vuelve a Disponible). Si se regenera el boleto, la venta se actualiza y conserva la fecha original. Opción "No registrar" para boletos de prueba.
+- Registro manual: por defecto es "Otro vendedor" y solo pide la fecha.
+
+### Unidades críticas
+- Al importar el PDF de stock se detectan las filas resaltadas con color (celeste) y la unidad queda marcada como crítica; en cada PDF se recalcula. El cambio aparece en la revisión como "Unidad crítica: NO → SÍ".
+- Si casi todas las filas vinieran pintadas, no se usa (sería un sombreado y no críticas).
+- Marca manual en la ficha de la unidad, con prioridad sobre el PDF ("Volver a lo que dice el PDF" para quitarla).
+- Etiqueta "🔥 Crítica" en tarjetas y tabla, atajo "Críticas" en el stock y orden "Críticas primero".
+
+Archivos: `services/boletoSaleService.ts`, `components/boleto/BoletoSaleSection.tsx`, `utils/critical.ts`, `utils/pdfHighlights.ts` (nuevos); cambios en `services/pdfService.ts`, `services/stockService.ts`, `services/firestoreService.ts`, `types/stock.ts`, `types/boleto.ts`, `utils/stockSelectors.ts`, `utils/stockSort.ts`, `components/boleto/BoletoModal.tsx`, `components/MarkAsSoldModal.tsx`, `components/VehicleDetailModal.tsx`, `components/ui/StatusBadge.tsx`, `components/stock/StockView.tsx`.
+
 ## Quinta etapa: toma de usado, gestoría del boleto y planilla UIF de Credinet
 
 ### Toma de usado en los presupuestos

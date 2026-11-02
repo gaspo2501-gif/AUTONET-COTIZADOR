@@ -1,3 +1,5 @@
+import { advisorProfileService } from './services/advisorProfileService';
+import { AdvisorSetupModal } from './components/AdvisorSetupModal';
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import { User } from 'firebase/auth';
 import { Vehicle, StockFilters, VehicleStatus, ProvinceTransfer } from './types/stock';
@@ -113,6 +115,9 @@ export default function App() {
 
   // Firebase Auth y sincronización
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  // Perfil del asesor (cada usuario firma con sus datos)
+  const [, setProfileTick] = useState(0);
+  useEffect(() => advisorProfileService.subscribe(() => setProfileTick((t) => t + 1)), []);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(() => stockService.getSyncStatus());
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showMigrationModal, setShowMigrationModal] = useState(false);
@@ -522,6 +527,8 @@ export default function App() {
             onCancel={() => setShowLoginModal(false)}
           />
         )}
+
+        {currentUser && !showMigrationModal && advisorProfileService.needsSetup() && <AdvisorSetupModal email={currentUser.email} />}
 
         {showMigrationModal && currentUser && (
           <Suspense fallback={null}>

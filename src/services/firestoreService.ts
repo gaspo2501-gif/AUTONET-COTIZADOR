@@ -190,6 +190,9 @@ class FirestoreService {
     if (!vehicle.fechaFacturacion) {
       sanitized.fechaFacturacion = deleteField();
     }
+    if (typeof vehicle.criticoManual !== 'boolean') {
+      sanitized.criticoManual = deleteField();
+    }
     await setDoc(docRef, sanitized, { merge: true });
   }
 

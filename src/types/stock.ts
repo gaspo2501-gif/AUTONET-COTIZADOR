@@ -40,7 +40,11 @@ export interface Vehicle {
   precioRealVenta?: number;
   ivaVenta?: 21 | 10.5;
   comisionBaseCalculada?: number;
-  esCritico?: boolean;
+  esCritico?: boolean; // Foto al momento de la venta (comisiones)
+  /** Unidad crítica según el PDF de stock (fila resaltada). Se actualiza con cada PDF. */
+  criticoPdf?: boolean;
+  /** Marca manual del asesor: tiene prioridad sobre el PDF (true/false). */
+  criticoManual?: boolean;
   usaCredinet?: boolean;
   tieneTomaUsado?: boolean;
   valorTomaUsado?: number;
@@ -244,6 +248,8 @@ export interface StockFilters {
   ubicacion?: string; // Filtro por campo Ub (Pendiente, Solalique, GR, FINAN, Autonet)
   empresa?: string; // Filtro por campo Empresa (MIRAGE, IRUÑA, AKIRA, OIL BULL, etc.)
   fotosAutonet?: 'todas' | 'con_fotos' | 'sin_fotos';
+  /** Solo unidades críticas (PDF de stock o marca manual). */
+  criticas?: boolean;
 }
 
 export type ProvinceTransfer = 'Neuquén' | 'Río Negro';

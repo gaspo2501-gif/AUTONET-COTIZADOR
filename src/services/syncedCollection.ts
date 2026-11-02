@@ -26,6 +26,8 @@ export class SyncedCollection<T extends SyncedItem> {
   private cache: T[] | null = null;
   private uid: string | null = null;
   private unsubCloud: (() => void) | null = null;
+  /** true cuando llegó la primera lectura de la nube para el usuario actual. */
+  public synced = false;
 
   constructor(
     private readonly name: string,
@@ -121,6 +123,18 @@ export class SyncedCollection<T extends SyncedItem> {
   private connect(uid: string): void {
     this.disconnect();
     this.uid = uid;
+    // Cada usuario tiene sus datos: si en este dispositivo había datos de OTRO usuario, no se mezclan
+    const ownerKey = `${this.storageKey}__owner`;
+    try {
+      const owner = localStorage.getItem(ownerKey);
+      if (owner && owner !== uid) {
+        this.cache = [];
+        localStorage.setItem(this.storageKey, '[]');
+      }
+      localStorage.setItem(ownerKey, uid);
+    } catch {
+      /* sin almacenamiento */
+    }
     if (!db || !isFirebaseConfigured) return;
     let firstSnapshot = true;
     this.unsubCloud = onSnapshot(
@@ -153,6 +167,7 @@ export class SyncedCollection<T extends SyncedItem> {
         });
 
         firstSnapshot = false;
+        this.synced = true;
         this.writeRaw([...merged.values()]);
         toPush.forEach((i) => this.push(i));
       },
@@ -170,5 +185,6 @@ export class SyncedCollection<T extends SyncedItem> {
     }
     this.unsubCloud = null;
     this.uid = null;
+    this.synced = false;
   }
 }

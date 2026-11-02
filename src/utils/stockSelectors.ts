@@ -1,3 +1,4 @@
+import { isCriticalVehicle } from './critical';
 import { CommercialFilter, StockFilters, Vehicle, VehicleStatus } from '../types/stock';
 import { normalizeMileage } from './formatters';
 import { matchesSearch } from './search';
@@ -179,6 +180,7 @@ export const countActiveAdvancedFilters = (filters: StockFilters): number => {
   if (filters.ubicacion) count++;
   if (filters.empresa) count++;
   if (filters.fotosAutonet && filters.fotosAutonet !== 'todas') count++;
+  if (filters.criticas) count++;
   return count;
 };
 
@@ -272,6 +274,9 @@ export const applyStockFilters = (
     // Fotos web Autonet
     if (filters.fotosAutonet === 'con_fotos' && (!v.fotos || v.fotos.length === 0)) return false;
     if (filters.fotosAutonet === 'sin_fotos' && v.fotos && v.fotos.length > 0) return false;
+
+    // Unidades críticas
+    if (filters.criticas && !isCriticalVehicle(v)) return false;
 
     return true;
   });

@@ -19,6 +19,9 @@ import { Vehicle, VehicleStatus, ProvinceTransfer } from '../types/stock';
 import { formatCurrency, formatKm } from '../utils/formatters';
 import { getSituacionOperativaInfo, getEmpresaBadgeClass } from '../utils/autonetHelpers';
 import { quoteService } from '../services/quoteService';
+import { stockService } from '../services/stockService';
+import { isCriticalVehicle } from '../utils/critical';
+import { normalizePatent } from '../utils/vehicleIdentity';
 import { VehicleQuoteModal } from './VehicleQuoteModal';
 import { VehicleQuickPanel } from './consultas/VehicleQuickPanel';
 
@@ -240,6 +243,9 @@ export const VehicleDetailModal: React.FC<VehicleDetailModalProps> = ({
               </div>
             </div>
 
+            {/* Unidad crítica: PDF de stock + marca manual */}
+            <CriticalControl vehicle={vehicle} />
+
             {/* Información comercial de Venta si está Vendido o Fuera de Stock */}
             {(vehicle.estado === 'Vendido' || vehicle.isHistorical) && (
               <div className="bg-emerald-50/70 p-4 rounded-xl border border-emerald-200 text-xs space-y-2">
@@ -425,5 +431,44 @@ export const VehicleDetailModal: React.FC<VehicleDetailModalProps> = ({
         />
       )}
     </>
+  );
+};
+
+
+/** Marca de unidad crítica: la del PDF de stock y, si hace falta, una manual que tiene prioridad. */
+const CriticalControl: React.FC<{ vehicle: Vehicle }> = ({ vehicle }) => {
+  const critical = isCriticalVehicle(vehicle);
+  const manual = typeof vehicle.criticoManual === 'boolean';
+  const setManual = (value: boolean | null) => {
+    const key = normalizePatent(vehicle.patente) || vehicle.id;
+    stockService.updateVehicle(key, { criticoManual: value === null ? undefined : value } as Partial<Vehicle>);
+  };
+  return (
+    <div className={`p-3.5 rounded-xl border text-xs flex flex-wrap items-center justify-between gap-3 ${critical ? 'bg-orange-50 border-orange-200' : 'bg-slate-50 border-slate-200'}`}>
+      <div>
+        <div className={`font-extrabold uppercase tracking-wider ${critical ? 'text-orange-800' : 'text-slate-700'}`}>
+          {critical ? '🔥 Unidad crítica' : 'No es unidad crítica'}
+        </div>
+        <div className="text-slate-500 mt-0.5">
+          PDF de stock: <strong>{vehicle.criticoPdf ? 'resaltada (crítica)' : 'sin resaltar'}</strong>
+          {manual && <> · marcada a mano como <strong>{vehicle.criticoManual ? 'crítica' : 'no crítica'}</strong></>}
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        {manual ? (
+          <button type="button" onClick={() => setManual(null)} className="px-3 py-1.5 rounded-lg bg-white border border-slate-300 font-bold text-slate-700 hover:bg-slate-100">
+            Volver a lo que dice el PDF
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setManual(!critical)}
+            className={`px-3 py-1.5 rounded-lg font-bold border ${critical ? 'bg-white border-slate-300 text-slate-700 hover:bg-slate-100' : 'bg-orange-500 border-orange-500 text-white hover:bg-orange-600'}`}
+          >
+            {critical ? 'Marcar como NO crítica' : 'Marcar como crítica'}
+          </button>
+        )}
+      </div>
+    </div>
   );
 };
