@@ -351,9 +351,9 @@ export const UpdateStockView: React.FC<UpdateStockViewProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-400 font-medium">Stock en base actual:</span>
-            <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-800 text-xs font-bold border border-slate-200">
-              {currentStock.length} unidades
+            <span className="text-xs text-slate-400 font-medium">Stock activo:</span>
+            <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-800 text-xs font-bold border border-slate-200" title={`${currentStock.length} unidades guardadas en total, contando vendidas y fuera de stock`}>
+              {currentStock.filter((v) => !v.isHistorical && v.estado !== 'fuera_de_stock' && v.estado !== 'Vendido').length} unidades
             </span>
           </div>
         </div>
@@ -556,7 +556,7 @@ export const UpdateStockView: React.FC<UpdateStockViewProps> = ({
                 <div className="mt-2 text-[11px] bg-white/70 border border-red-200 rounded-lg p-2.5 text-red-800">
                   <p className="font-semibold">El documento fue interpretado correctamente por el lector:</p>
                   <p className="text-red-700 mt-0.5">
-                    Se procesaron con éxito {diffResult.diagnostics.pageCount} páginas y {diffResult.diagnostics.linesExtracted} líneas. Sin embargo, solo {diffResult.totalEncontrados} unidades fueron reconocidas como válidas frente a las {currentStock.length} unidades del stock actual (menos del 60%). Para evitar bajas accidentales en masa, la importación se mantiene bloqueada.
+                    Se procesaron con éxito {diffResult.diagnostics.pageCount} páginas y {diffResult.diagnostics.linesExtracted} líneas. Sin embargo, solo {diffResult.totalEncontrados} unidades fueron reconocidas como válidas frente a las {currentStock.filter((v) => !v.isHistorical && v.estado !== 'fuera_de_stock' && v.estado !== 'Vendido').length} unidades activas del stock actual (menos del 60%). Para evitar bajas accidentales en masa, la importación se mantiene bloqueada.
                   </p>
                 </div>
               </div>

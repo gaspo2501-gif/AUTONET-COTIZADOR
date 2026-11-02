@@ -1968,7 +1968,8 @@ export class PdfService {
     });
 
     // 3. VALIDACIONES DE SEGURIDAD Y BLOQUEO DE CONFIRMACIÓN
-    const currentCount = currentStock.length;
+    // Se compara contra el stock ACTIVO: las vendidas y las que ya están fuera de stock no cuentan
+    const currentCount = currentStock.filter((v) => !v.isHistorical && v.estado !== 'fuera_de_stock' && v.estado !== 'Vendido').length;
     const extractedCount = extractedList.length;
     const ratio = currentCount > 0 ? extractedCount / currentCount : 1;
 
