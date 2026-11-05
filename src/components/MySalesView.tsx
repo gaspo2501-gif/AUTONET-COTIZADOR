@@ -25,6 +25,8 @@ import { Vehicle } from '../types/stock';
 import { stockService } from '../services/stockService';
 import { formatCurrency, formatKm } from '../utils/formatters';
 import { normalizePatent } from '../utils/vehicleIdentity';
+import { useSaleClients } from '../utils/saleClient';
+import { SaleClientLine } from './ui/SaleClientLine';
 
 function formatDateDMY(dateStr?: string | null): string {
   if (!dateStr || typeof dateStr !== 'string') return '';
@@ -51,6 +53,7 @@ export const MySalesView: React.FC<MySalesViewProps> = ({
   const [salesFilter, setSalesFilter] = useState<'self' | 'other' | 'all' | 'historical'>('self');
   const [invoiceFilter, setInvoiceFilter] = useState<'all' | 'pending' | 'invoiced'>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const getClient = useSaleClients();
   const [sortBy, setSortBy] = useState<'fecha_desc' | 'precio_desc' | 'marca_asc'>('fecha_desc');
 
   // Modal para marcar / editar fecha de facturación
@@ -109,8 +112,12 @@ export const MySalesView: React.FC<MySalesViewProps> = ({
 
       // Buscador
       if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase().trim();
-        const searchTarget = `${v.patente} ${v.marca} ${v.modelo} ${v.version} ${v.anio} ${v.color}`.toLowerCase();
+        const q = searchQuery.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+        const cli = getClient(v);
+        const searchTarget = `${v.patente} ${v.marca} ${v.modelo} ${v.version} ${v.anio} ${v.color} ${cli?.nombre || ''} ${cli?.dni || ''}`
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .toLowerCase();
         const cleanPatente = v.patente.replace(/\s+/g, '').toLowerCase();
         const cleanQuery = q.replace(/\s+/g, '');
         if (!searchTarget.includes(q) && !cleanPatente.includes(cleanQuery)) {
@@ -132,7 +139,7 @@ export const MySalesView: React.FC<MySalesViewProps> = ({
       }
       return `${a.marca} ${a.modelo}`.localeCompare(`${b.marca} ${b.modelo}`);
     });
-  }, [vehicles, salesFilter, searchQuery, sortBy]);
+  }, [vehicles, salesFilter, invoiceFilter, searchQuery, sortBy, getClient]);
 
   return (
     <div className="max-w-7xl mx-auto space-y-6 animate-in fade-in duration-150">
@@ -288,7 +295,7 @@ export const MySalesView: React.FC<MySalesViewProps> = ({
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Filtrar por patente, modelo..."
+                placeholder="Filtrar por cliente, patente, modelo..."
                 className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 rounded-xl border border-slate-200 outline-none focus:border-blue-500 focus:bg-white"
               />
             </div>
@@ -394,7 +401,7 @@ export const MySalesView: React.FC<MySalesViewProps> = ({
                       </td>
 
                       {/* Vehículo */}
-                      <td className="py-3.5 px-4">
+                      <td className="py-3.5 px-4 min-w-[230px]">
                         <button
                           type="button"
                           onClick={() => onSelectVehicle(v)}
@@ -405,6 +412,7 @@ export const MySalesView: React.FC<MySalesViewProps> = ({
                         <div className="text-slate-500 text-xs">
                           {v.version} • {v.anio} • {formatKm(v.kilometraje)}
                         </div>
+                        <SaleClientLine client={getClient(v)} showContact />
                       </td>
 
                       {/* Fecha Venta */}

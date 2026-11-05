@@ -39,6 +39,9 @@ export function saleOptionsFromBoleto(d: BoletoData, v: Vehicle) {
     comisionTomaCalculada: tieneToma ? calculateTradeInCommission(toma, ivaToma) : undefined,
     marcaModeloTomaUsado: tieneToma ? [d.entregaUsado.modelo, d.entregaUsado.anio].filter(Boolean).join(' ').trim() || undefined : undefined,
     patenteTomaUsado: tieneToma ? (d.entregaUsado.patente || '').trim().toUpperCase() || undefined : undefined,
+    clienteNombre: (d.cliente.nombreCompleto || '').trim().toUpperCase() || undefined,
+    clienteDni: (d.cliente.dni || '').trim() || undefined,
+    clienteTelefono: (d.cliente.telefono || '').trim() || undefined,
   };
 }
 

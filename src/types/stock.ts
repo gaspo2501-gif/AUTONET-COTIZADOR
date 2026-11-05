@@ -52,6 +52,10 @@ export interface Vehicle {
   comisionTomaCalculada?: number;
   marcaModeloTomaUsado?: string;
   patenteTomaUsado?: string;
+  // Cliente del boleto (venta propia)
+  clienteNombre?: string;
+  clienteDni?: string;
+  clienteTelefono?: string;
   
   // Control de stock activo vs histórico
   isHistorical?: boolean; // true si ya no figura en el stock activo del último PDF

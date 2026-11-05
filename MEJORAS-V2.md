@@ -1,5 +1,11 @@
 # Autonet Cotizador — Versión 2
 
+## Octava etapa: cliente en Mis ventas
+
+- Cada venta propia muestra el nombre del cliente del boleto (con DNI y teléfono) en Mis ventas y en Comisiones.
+- El buscador de Mis ventas también busca por nombre o DNI del cliente (sin importar tildes).
+- Las ventas nuevas guardan el cliente al generar el boleto; las anteriores lo toman del historial de boletos.
+
 ## Séptima etapa: varios asesores, cada uno con lo suyo
 
 - Cada usuario de Firebase tiene sus propios datos (stock, boletos, presupuestos, ventas, comisiones, entidades de financiación, mensajes). Ya era así en la nube; ahora además:

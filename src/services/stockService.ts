@@ -419,6 +419,9 @@ class StockService {
       marcaModeloTomaUsado?: string;
       patenteTomaUsado?: string;
       fechaFacturacion?: string;
+      clienteNombre?: string;
+      clienteDni?: string;
+      clienteTelefono?: string;
     }
   ): Vehicle | null {
     const stock = this.getAllVehicles();
@@ -453,6 +456,9 @@ class StockService {
       comisionTomaCalculada: options.comisionTomaCalculada ?? current.comisionTomaCalculada,
       marcaModeloTomaUsado: options.marcaModeloTomaUsado ?? current.marcaModeloTomaUsado,
       patenteTomaUsado: options.patenteTomaUsado ?? current.patenteTomaUsado,
+      clienteNombre: options.clienteNombre ?? (options.saleOwner === 'self' ? current.clienteNombre : undefined),
+      clienteDni: options.clienteDni ?? (options.saleOwner === 'self' ? current.clienteDni : undefined),
+      clienteTelefono: options.clienteTelefono ?? (options.saleOwner === 'self' ? current.clienteTelefono : undefined),
       fechaFacturacion: cleanFechaFacturacion,
       fechaActualizacion: new Date().toISOString(),
     };

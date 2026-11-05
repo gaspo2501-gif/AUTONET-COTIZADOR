@@ -1,3 +1,5 @@
+import { useSaleClients } from '../utils/saleClient';
+import { SaleClientLine } from './ui/SaleClientLine';
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   DollarSign, 
@@ -88,6 +90,7 @@ export const CommissionsView: React.FC<CommissionsViewProps> = ({
     return { year: now.getFullYear(), month: now.getMonth() + 1 };
   }, [vehicles]);
 
+  const getClient = useSaleClients();
   const [selectedYear, setSelectedYear] = useState<number>(initialPeriod.year);
   const [selectedMonth, setSelectedMonth] = useState<number>(initialPeriod.month);
 
@@ -930,6 +933,7 @@ export const CommissionsView: React.FC<CommissionsViewProps> = ({
                             <div className="font-extrabold text-slate-900 text-xs sm:text-sm">
                               {veh.marca} {veh.modelo}
                             </div>
+                            <SaleClientLine client={getClient(veh)} />
                             <div className="text-[11px] text-slate-500 flex items-center gap-2 flex-wrap">
                               <span>{veh.version} • {veh.anio}</span>
                               <span className="text-slate-300">|</span>
@@ -1107,6 +1111,7 @@ export const CommissionsView: React.FC<CommissionsViewProps> = ({
                             <div className="font-extrabold text-slate-900 text-xs sm:text-sm">
                               {veh.marca} {veh.modelo}
                             </div>
+                            <SaleClientLine client={getClient(veh)} />
                             <div className="text-[11px] text-slate-500 flex items-center gap-2 flex-wrap">
                               <span>{veh.version} • {veh.anio}</span>
                               <span className="text-slate-300">|</span>
@@ -1238,6 +1243,7 @@ export const CommissionsView: React.FC<CommissionsViewProps> = ({
                       <div className="col-span-5">
                         <div className="font-bold text-slate-900">{v.marca} {v.modelo}</div>
                         <div className="text-[11px] text-slate-400 truncate">{v.version}</div>
+                        <SaleClientLine client={getClient(v)} />
                       </div>
                       <div className="col-span-2 text-center font-mono text-slate-600 text-[11px]">
                         {formatDateDMY(v.soldAt) || 'S/D'}
@@ -1315,6 +1321,7 @@ export const CommissionsView: React.FC<CommissionsViewProps> = ({
                       <div className="col-span-4">
                         <div className="font-bold text-slate-900">{v.marca} {v.modelo}</div>
                         <div className="text-[11px] text-slate-400 truncate">{v.version}</div>
+                        <SaleClientLine client={getClient(v)} />
                       </div>
                       <div className="col-span-2 text-center font-mono text-slate-600 text-[11px]">
                         {formatDateDMY(v.soldAt) || 'S/D'}
@@ -1410,6 +1417,7 @@ export const CommissionsView: React.FC<CommissionsViewProps> = ({
                     <div className="col-span-6">
                       <div className="font-bold text-slate-900">{v.marca} {v.modelo}</div>
                       <div className="text-[11px] text-slate-400 truncate">{v.version}</div>
+                      <SaleClientLine client={getClient(v)} />
                     </div>
                     <div className="col-span-3 text-right font-mono text-slate-700 text-xs">
                       {formatDateDMY(v.soldAt) || 'S/D'}
